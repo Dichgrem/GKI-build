@@ -1,0 +1,236 @@
+name: Build Android OnePlus SM8650 Kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies and update GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential cpio curl flex \
+            git libncurses-dev libssl-dev \
+            libelf-dev lzop python3 unzip xz-utils \
+            zstd rsync ca-certificates wget \
+            pahole dwarves
+
+          # 安装更新的GCC以满足内核版本要求
+          sudo apt-get install -y gcc-9 g++-9
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+
+          # 验证GCC版本
+          gcc --version
+
+      - name: Setup directory structure
+        run: |
+          # 创建与本地一致的目录结构
+          mkdir -p $GITHUB_WORKSPACE/kernel/toolchains
+          mkdir -p $GITHUB_WORKSPACE/kernel/source
+          mkdir -p $GITHUB_WORKSPACE/kernel/anykernel3
+
+          echo "=== Created directory structure ==="
+          ls -la $GITHUB_WORKSPACE/kernel/
+
+      - name: Setup toolchains
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+
+          echo "=== 下载 ARM GCC 工具链 ==="
+          # 下载ARM GCC工具链
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
+            ./toolchains/gcc-arm-4.9
+
+          echo "=== 下载 Clang 工具链 ==="
+          # 创建 Clang 目录
+          mkdir -p ./toolchains/clang-14
+
+          # 下载 Clang 工具链
+          cd toolchains
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/14.0.6-20240212-release/Clang-14.0.6-20240212.tar.gz
+
+          # 检查下载是否成功
+          if [ ! -f "Clang-14.0.6-20240212.tar.gz" ]; then
+              echo "Error: Clang 工具链下载失败"
+              exit 1
+          fi
+
+          echo "=== 解压 Clang 工具链 ==="
+          # 解压到 clang-14 目录
+          tar -xzf Clang-14.0.6-20240212.tar.gz -C clang-14
+
+          # 检查解压后的目录结构
+          echo "=== 检查解压后的目录结构 ==="
+          ls -la clang-14/
+
+          # 如果存在嵌套目录，需要调整
+          if [ -d "clang-14/Clang-14.0.6-20240212" ]; then
+              echo "检测到嵌套目录，正在调整..."
+              mv clang-14/Clang-14.0.6-20240212/* clang-14/
+              rmdir clang-14/Clang-14.0.6-20240212
+          fi
+
+          # 清理下载的压缩包
+          rm -f Clang-14.0.6-20240212.tar.gz
+
+          # 返回 kernel 目录
+          cd $GITHUB_WORKSPACE/kernel
+
+          echo "=== 验证工具链二进制文件 ==="
+          # 验证关键工具存在
+          echo "检查 Clang 二进制文件..."
+          if [ -f "./toolchains/clang-14/bin/clang" ]; then
+              echo "✓ clang 存在"
+              ls -la ./toolchains/clang-14/bin/clang
+          else
+              echo "✗ clang 不存在，检查目录结构:"
+              find ./toolchains/clang-14 -name "clang" -type f 2>/dev/null || echo "未找到 clang 二进制文件"
+              exit 1
+          fi
+
+          echo "检查 aarch64-linux-gnu 工具..."
+          if ls ./toolchains/clang-14/bin/aarch64-linux-gnu-* 1> /dev/null 2>&1; then
+              echo "✓ aarch64-linux-gnu 工具存在"
+              ls -la ./toolchains/clang-14/bin/aarch64-linux-gnu-* | head -3
+          else
+              echo "✗ aarch64-linux-gnu 工具不存在"
+          fi
+
+          echo "检查 LLVM 工具..."
+          if ls ./toolchains/clang-14/bin/llvm-* 1> /dev/null 2>&1; then
+              echo "✓ LLVM 工具存在"
+              ls -la ./toolchains/clang-14/bin/llvm-* | head -3
+          else
+              echo "✗ LLVM 工具不存在"
+          fi
+
+          echo "检查 ARM GCC 工具..."
+          if ls ./toolchains/gcc-arm-4.9/bin/arm-linux-androideabi-* 1> /dev/null 2>&1; then
+              echo "✓ ARM GCC 工具存在"
+              ls -la ./toolchains/gcc-arm-4.9/bin/arm-linux-androideabi-* | head -3
+          else
+              echo "✗ ARM GCC 工具不存在"
+          fi
+
+          echo "=== 最终目录结构 ==="
+          echo "kernel/"
+          ls -la ./
+          echo "kernel/toolchains/"
+          ls -la ./toolchains/
+          echo "工具链设置完成 ==="
+
+      - name: Clone kernel source
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          git clone --depth=1 \
+            https://github.com/crdroidandroid/android_kernel_oneplus_sm8650.git \
+            ./source/android_kernel_oneplus_sm8650
+
+          echo "=== 内核源码目录结构 ==="
+          echo "kernel/source/"
+          ls -la ./source/
+
+      - name: Copy config to kernel source
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          if [ -f "$GITHUB_WORKSPACE/config" ]; then
+            cp $GITHUB_WORKSPACE/config ./source/android_kernel_oneplus_sm8650/myconfig
+            echo "Custom config copied"
+          else
+            echo "Error: config file not found!"
+            exit 1
+          fi
+
+      - name: Build kernel
+        run: |
+          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+
+          # 记录开始时间
+          starttime=$(date +'%Y-%m-%d %H:%M:%S')
+          echo "Build started at: $starttime"
+
+          # 设置环境变量（与你本地脚本完全一致）
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export KCONFIG_CONFIG=$PWD/myconfig
+
+          # 设置工具链路径变量（使用相对路径匹配你的本地环境）
+          CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-14/bin
+          GCC_ARM_PATH=$GITHUB_WORKSPACE/kernel/toolchains/gcc-arm-4.9/bin
+
+          # 验证所有必需的工具
+          echo "=== Verifying required tools ==="
+          $CLANG_PATH/clang --version | head -2
+          $CLANG_PATH/aarch64-linux-gnu-gcc --version | head -1 || echo "aarch64-linux-gnu-gcc not found"
+          $GCC_ARM_PATH/arm-linux-androideabi-gcc --version | head -1
+          test -f $CLANG_PATH/ld.lld && echo "ld.lld found" || echo "ld.lld not found"
+          gcc --version | head -1
+          echo "================================"
+
+          # 清理构建目录
+          rm -rf out
+          mkdir -p out
+
+          # 生成默认 config（与你本地脚本完全一致）
+          make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
+
+          # 编译内核（与你本地脚本完全一致的参数）
+          make -j$(nproc) O=out WERROR=0 \
+              KCFLAGS="-Wno-error=frame-larger-than=" \
+              NM=$CLANG_PATH/llvm-nm \
+              OBJCOPY=$CLANG_PATH/llvm-objcopy \
+              LD=$CLANG_PATH/ld.lld \
+              CROSS_COMPILE=$CLANG_PATH/aarch64-linux-gnu- \
+              CROSS_COMPILE_ARM32=$GCC_ARM_PATH/arm-linux-androideabi- \
+              CC=$CLANG_PATH/clang \
+              AR=$CLANG_PATH/llvm-ar \
+              OBJDUMP=$CLANG_PATH/llvm-objdump \
+              STRIP=$CLANG_PATH/llvm-strip \
+              2>&1 | tee out/error.log
+
+          # 记录结束时间
+          endtime=$(date +'%Y-%m-%d %H:%M:%S')
+          echo "Build finished at: $endtime"
+
+      - name: Check build results
+        run: |
+          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+          echo "=== Build Results ==="
+          if [ -f "out/arch/arm64/boot/Image" ]; then
+            echo "✅ Kernel build successful!"
+            ls -la out/arch/arm64/boot/
+            echo "Image size: $(du -h out/arch/arm64/boot/Image)"
+            
+            # 检查是否有DTB文件
+            if ls out/arch/arm64/boot/dts/*/*.dtb 2>/dev/null; then
+              echo "DTB files found:"
+              ls -la out/arch/arm64/boot/dts/*/*.dtb | head -5
+            fi
+          else
+            echo "❌ Kernel build failed!"
+            echo "=== Last 100 lines of error log ==="
+            tail -100 out/error.log
+            echo "=== Error summary ==="
+            grep -i "error\|failed\|stop" out/error.log | tail -10
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-build-${{ github.run_number }}
+          path: |
+            kernel/source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image*
+            kernel/source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb
+            kernel/source/android_kernel_oneplus_sm8650/out/error.log
+            kernel/source/android_kernel_oneplus_sm8650/out/.config
