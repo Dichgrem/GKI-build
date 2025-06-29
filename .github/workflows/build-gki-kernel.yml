@@ -1,4 +1,5 @@
 name: Build Android OnePlus SM8650 Kernel
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +8,19 @@ on:
         required: false
         default: "true"
         type: boolean
+      enable_zram:
+        description: "Enable ZRAM support"
+        required: false
+        default: "true"
+        type: boolean
+      zram_algorithm:
+        description: "ZRAM compression algorithm"
+        required: false
+        default: "lz4"
+        type: choice
+        options:
+          - lz4
+          - zstd
       kernel_name:
         description: "Custom kernel name (optional)"
         required: false
@@ -170,30 +184,69 @@ jobs:
             exit 1
           fi
 
-      - name: Configure BBR if enabled
+      - name: Copy and configure kernel config
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
-
-          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-            echo "=== 启用 BBR TCP 拥塞控制 ==="
-            
-            # 在 myconfig 文件中添加或修改 BBR 相关配置
-            echo "" >> myconfig
-            echo "# BBR TCP Congestion Control" >> myconfig
-            echo "CONFIG_TCP_CONG_ADVANCED=y" >> myconfig
-            echo "CONFIG_TCP_CONG_BBR=y" >> myconfig
-            echo "CONFIG_DEFAULT_TCP_CONG=\"bbr\"" >> myconfig
-            echo "CONFIG_DEFAULT_BBR=y" >> myconfig
-            echo "# CONFIG_DEFAULT_CUBIC is not set" >> myconfig
-            echo "# CONFIG_DEFAULT_RENO is not set" >> myconfig
-            
-            echo "✅ BBR 配置已添加到 myconfig"
-            echo "=== BBR 相关配置 ==="
-            grep -i bbr myconfig || echo "BBR 配置未找到"
-            grep -i tcp_cong myconfig || echo "TCP_CONG 配置未找到"
+          cd $GITHUB_WORKSPACE/kernel
+          if [ -f "$GITHUB_WORKSPACE/config" ]; then
+            cp $GITHUB_WORKSPACE/config ./source/android_kernel_oneplus_sm8650/myconfig
           else
-            echo "BBR 未启用，跳过配置"
+            echo "Error: config file not found!"
+            exit 1
           fi
+
+          cd source/android_kernel_oneplus_sm8650
+
+          # Configure BBR if enabled
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            echo "=== Enabling BBR TCP Congestion Control ==="
+            cat >> myconfig << EOF
+
+          # BBR TCP Congestion Control
+          CONFIG_TCP_CONG_ADVANCED=y
+          CONFIG_TCP_CONG_BBR=y
+          CONFIG_DEFAULT_TCP_CONG="bbr"
+          CONFIG_DEFAULT_BBR=y
+          # CONFIG_DEFAULT_CUBIC is not set
+          # CONFIG_DEFAULT_RENO is not set
+          EOF
+          fi
+
+          # Configure ZRAM if enabled
+          if [ "${{ inputs.enable_zram }}" = "true" ]; then
+            echo "=== Enabling ZRAM with ${{ inputs.zram_algorithm }} compression ==="
+            cat >> myconfig << EOF
+
+          # ZRAM Support
+          CONFIG_ZRAM=y
+          CONFIG_ZRAM_DEF_COMP_LZ4=y
+          CONFIG_ZRAM_WRITEBACK=y
+          CONFIG_ZRAM_MEMORY_TRACKING=y
+          CONFIG_ZSMALLOC=y
+          CONFIG_ZSMALLOC_STAT=y
+          EOF
+
+            # Configure compression algorithm
+            if [ "${{ inputs.zram_algorithm }}" = "zstd" ]; then
+              cat >> myconfig << EOF
+          CONFIG_CRYPTO_ZSTD=y
+          CONFIG_ZRAM_DEF_COMP="zstd"
+          CONFIG_ZRAM_DEF_COMP_ZSTD=y
+          # CONFIG_ZRAM_DEF_COMP_LZ4 is not set
+          EOF
+            else
+              cat >> myconfig << EOF
+          CONFIG_CRYPTO_LZ4=y
+          CONFIG_CRYPTO_LZ4HC=y
+          CONFIG_ZRAM_DEF_COMP="lz4"
+          CONFIG_ZRAM_DEF_COMP_LZ4=y
+          EOF
+            fi
+          fi
+
+          echo "=== Configuration Summary ==="
+          echo "BBR Enabled: ${{ inputs.enable_bbr }}"
+          echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
+          echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
 
       - name: Build kernel
         run: |
@@ -236,7 +289,10 @@ jobs:
 
           # 编译内核（与你本地脚本完全一致的参数）
           make -j$(nproc) O=out WERROR=0 \
-              KCFLAGS="-Wno-error=frame-larger-than=" \
+              KCFLAGS="-Wno-error=frame-larger-than= -O3 -pipe" \
+              KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
+              HOSTCFLAGS="-O3 -pipe" \
+              HOSTCXXFLAGS="-O3 -pipe" \
               NM=$CLANG_PATH/llvm-nm \
               OBJCOPY=$CLANG_PATH/llvm-objcopy \
               LD=$CLANG_PATH/ld.lld \
