@@ -1,6 +1,17 @@
 name: Build Android OnePlus SM8650 Kernel
 on:
   workflow_dispatch:
+    inputs:
+      enable_bbr:
+        description: "Enable BBR TCP Congestion Control"
+        required: false
+        default: "true"
+        type: boolean
+      kernel_name:
+        description: "Custom kernel name (optional)"
+        required: false
+        default: "CustomKernel"
+        type: string
 
 jobs:
   build-kernel:
@@ -20,7 +31,7 @@ jobs:
             git libncurses-dev libssl-dev \
             libelf-dev lzop python3 unzip xz-utils \
             zstd rsync ca-certificates wget \
-            pahole dwarves
+            pahole dwarves zip
 
           # 安装更新的GCC以满足内核版本要求
           sudo apt-get install -y gcc-9 g++-9
@@ -36,6 +47,7 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/kernel/toolchains
           mkdir -p $GITHUB_WORKSPACE/kernel/source
           mkdir -p $GITHUB_WORKSPACE/kernel/anykernel3
+          mkdir -p $GITHUB_WORKSPACE/kernel/output
 
           echo "=== Created directory structure ==="
           ls -la $GITHUB_WORKSPACE/kernel/
@@ -139,6 +151,14 @@ jobs:
           echo "kernel/source/"
           ls -la ./source/
 
+      - name: Clone AnyKernel3
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ./anykernel3
+
+          echo "=== AnyKernel3 目录结构 ==="
+          ls -la ./anykernel3/
+
       - name: Copy config to kernel source
         run: |
           cd $GITHUB_WORKSPACE/kernel
@@ -148,6 +168,31 @@ jobs:
           else
             echo "Error: config file not found!"
             exit 1
+          fi
+
+      - name: Configure BBR if enabled
+        run: |
+          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            echo "=== 启用 BBR TCP 拥塞控制 ==="
+            
+            # 在 myconfig 文件中添加或修改 BBR 相关配置
+            echo "" >> myconfig
+            echo "# BBR TCP Congestion Control" >> myconfig
+            echo "CONFIG_TCP_CONG_ADVANCED=y" >> myconfig
+            echo "CONFIG_TCP_CONG_BBR=y" >> myconfig
+            echo "CONFIG_DEFAULT_TCP_CONG=\"bbr\"" >> myconfig
+            echo "CONFIG_DEFAULT_BBR=y" >> myconfig
+            echo "# CONFIG_DEFAULT_CUBIC is not set" >> myconfig
+            echo "# CONFIG_DEFAULT_RENO is not set" >> myconfig
+            
+            echo "✅ BBR 配置已添加到 myconfig"
+            echo "=== BBR 相关配置 ==="
+            grep -i bbr myconfig || echo "BBR 配置未找到"
+            grep -i tcp_cong myconfig || echo "TCP_CONG 配置未找到"
+          else
+            echo "BBR 未启用，跳过配置"
           fi
 
       - name: Build kernel
@@ -182,6 +227,12 @@ jobs:
 
           # 生成默认 config（与你本地脚本完全一致）
           make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
+
+          # 检查 BBR 是否已启用
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            echo "=== 验证 BBR 配置 ==="
+            grep -i bbr out/.config || echo "BBR 未在最终配置中找到"
+          fi
 
           # 编译内核（与你本地脚本完全一致的参数）
           make -j$(nproc) O=out WERROR=0 \
@@ -224,6 +275,155 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare AnyKernel3 package
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+
+          # 设置内核名称
+          KERNEL_NAME="${{ inputs.kernel_name }}"
+          if [ -z "$KERNEL_NAME" ]; then
+            KERNEL_NAME="CustomKernel"
+          fi
+
+          # 获取内核版本信息
+          cd source/android_kernel_oneplus_sm8650
+          KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
+          BUILD_DATE=$(date +'%Y%m%d_%H%M')
+
+          cd $GITHUB_WORKSPACE/kernel
+
+          echo "=== 准备 AnyKernel3 打包 ==="
+          echo "内核名称: $KERNEL_NAME"
+          echo "内核版本: $KERNEL_VERSION"
+          echo "构建日期: $BUILD_DATE"
+
+          # 复制 AnyKernel3 模板到输出目录
+          cp -r anykernel3/* output/
+
+          # 复制内核文件
+          cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image output/
+
+          # 如果存在 Image.gz，也复制它
+          if [ -f "source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image.gz" ]; then
+            cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image.gz output/
+          fi
+
+          # 复制 DTB 文件（如果存在）
+          if ls source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb 2>/dev/null; then
+            mkdir -p output/dtbs
+            cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb output/dtbs/
+            echo "DTB files copied to dtbs/"
+          fi
+
+          # 修改 AnyKernel3 配置
+          cd output
+
+          # 备份原始 anykernel.sh
+          cp anykernel.sh anykernel.sh.bak
+
+          # 自定义 anykernel.sh 配置
+          cat > anykernel.sh << 'EOF'
+          # AnyKernel3 Ramdisk Mod Script
+          # osm0sis @ xda-developers
+
+          ## AnyKernel setup
+          # begin properties
+          properties() { '
+          kernel.string=
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=OnePlus12
+          device.name2=OP594DL1
+          device.name3=PJD110
+          device.name4=
+          device.name5=
+          supported.versions=
+          supported.patchlevels=
+          '; } # end properties
+
+          # shell variables
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=1;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+
+          ## AnyKernel methods (DO NOT CHANGE)
+          # import patching functions/variables - see for reference
+          . tools/ak3-core.sh;
+
+          ## AnyKernel file attributes
+          # set permissions/ownership for included ramdisk files
+          set_perm_recursive 0 0 755 644 $ramdisk/*;
+          set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+
+          ## AnyKernel install
+          dump_boot;
+
+          # begin ramdisk changes
+
+          # end ramdisk changes
+
+          write_boot;
+          ## end install
+          EOF
+
+          # 创建更新信息文件
+          cat > kernel_info.txt << EOF
+          Kernel Name: $KERNEL_NAME
+          Kernel Version: $KERNEL_VERSION
+          Build Date: $BUILD_DATE
+          BBR Enabled: ${{ inputs.enable_bbr }}
+          Compiler: Clang 14.0.6
+          Target Device: OnePlus 12 (SM8650)
+          Architecture: ARM64
+          EOF
+
+          echo "=== AnyKernel3 准备完成 ==="
+          ls -la ./
+
+      - name: Create AnyKernel3 ZIP package
+        run: |
+          cd $GITHUB_WORKSPACE/kernel/output
+
+          # 设置包名
+          KERNEL_NAME="${{ inputs.kernel_name }}"
+          if [ -z "$KERNEL_NAME" ]; then
+            KERNEL_NAME="CustomKernel"
+          fi
+
+          BUILD_DATE=$(date +'%Y%m%d_%H%M')
+          BBR_SUFFIX=""
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            BBR_SUFFIX="_BBR"
+          fi
+
+          ZIP_NAME="${KERNEL_NAME}${BBR_SUFFIX}_${BUILD_DATE}.zip"
+
+          echo "=== 创建 ZIP 包: $ZIP_NAME ==="
+
+          # 创建 ZIP 包
+          zip -r9 "$ZIP_NAME" * -x "*.bak"
+
+          # 验证 ZIP 包
+          if [ -f "$ZIP_NAME" ]; then
+            echo "✅ ZIP 包创建成功!"
+            echo "包名: $ZIP_NAME"
+            echo "大小: $(du -h "$ZIP_NAME")"
+            
+            # 显示 ZIP 包内容
+            echo "=== ZIP 包内容 ==="
+            unzip -l "$ZIP_NAME" | head -20
+          else
+            echo "❌ ZIP 包创建失败!"
+            exit 1
+          fi
+
+          # 保存包名供后续步骤使用
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -234,3 +434,13 @@ jobs:
             kernel/source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb
             kernel/source/android_kernel_oneplus_sm8650/out/error.log
             kernel/source/android_kernel_oneplus_sm8650/out/.config
+            kernel/output/*.zip
+            kernel/output/kernel_info.txt
+
+      - name: Upload AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: kernel/output/${{ env.ZIP_NAME }}
+          retention-days: 30
