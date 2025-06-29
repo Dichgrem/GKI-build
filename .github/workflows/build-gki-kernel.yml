@@ -248,6 +248,16 @@ jobs:
           echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
           echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
 
+      - name: Install SukiSU‑Ultra
+        run: |
+          # 1. 下载并切换内核目录
+          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+          export KCONFIG_CONFIG=myconfig
+
+          # 2. 集成 SukiSU-Ultra
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+          echo "✅ 完成 SukiSU‑Ultra（配置：$KCONFIG_CONFIG）"
+
       - name: Build kernel
         run: |
           cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
