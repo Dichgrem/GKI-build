@@ -385,6 +385,10 @@ jobs:
           # 复制 AnyKernel3 模板到输出目录
           cp -r anykernel3/* output/
 
+          # 删除不需要的目录
+          cd output
+          rm -rf ramdisk patch modules
+
           # 复制内核文件
           cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image output/
 
@@ -486,7 +490,7 @@ jobs:
           echo "=== 创建 ZIP 包: $ZIP_NAME ==="
 
           # 创建 ZIP 包
-          zip -r9 "$ZIP_NAME" * -x "*.bak"
+          zip -r9 "$ZIP_NAME" . -x "*.bak" "*.zip"
 
           # 验证 ZIP 包
           if [ -f "$ZIP_NAME" ]; then
