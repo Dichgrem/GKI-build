@@ -1,4 +1,4 @@
-name: Build Android OnePlus SM8650 Kernel
+name: Build Android GKI Kernel
 
 on:
   workflow_dispatch:
@@ -30,6 +30,7 @@ on:
           - sukisu
           - kernelsu
           - kernelsu-next
+          - none
       kernel_name:
         description: "Custom kernel name (optional)"
         required: false
@@ -60,7 +61,6 @@ jobs:
           sudo apt-get install -y gcc-9 g++-9
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
-
           # 验证GCC版本
           gcc --version
 
@@ -272,6 +272,8 @@ jobs:
           elif [ "${{ github.event.inputs.root_solution }}" = "sukisu" ]; then
             echo "✅ 集成 SukiSU-Ultra"
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+          elif [ "${{ github.event.inputs.root_solution }}" = "none" ]; then
+          echo "ℹ️ 未选择任何 Root 方案，跳过"
           else
             echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}"
             exit 1
@@ -285,12 +287,12 @@ jobs:
           starttime=$(date +'%Y-%m-%d %H:%M:%S')
           echo "Build started at: $starttime"
 
-          # 设置环境变量（与你本地脚本完全一致）
+          # 设置环境变量
           export ARCH=arm64
           export SUBARCH=arm64
           export KCONFIG_CONFIG=$PWD/myconfig
 
-          # 设置工具链路径变量（使用相对路径匹配你的本地环境）
+          # 设置工具链路径变量
           CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-14/bin
           GCC_ARM_PATH=$GITHUB_WORKSPACE/kernel/toolchains/gcc-arm-4.9/bin
 
@@ -307,16 +309,10 @@ jobs:
           rm -rf out
           mkdir -p out
 
-          # 生成默认 config（与你本地脚本完全一致）
+          # 生成默认配置
           make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
 
-          # 检查 BBR 是否已启用
-          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-            echo "=== 验证 BBR 配置 ==="
-            grep -i bbr out/.config || echo "BBR 未在最终配置中找到"
-          fi
-
-          # 编译内核（与你本地脚本完全一致的参数）
+          # 编译内核
           make -j$(nproc) O=out WERROR=0 \
               KCFLAGS="-Wno-error=frame-larger-than= -O3 -pipe" \
               KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
@@ -344,13 +340,7 @@ jobs:
           if [ -f "out/arch/arm64/boot/Image" ]; then
             echo "✅ Kernel build successful!"
             ls -la out/arch/arm64/boot/
-            echo "Image size: $(du -h out/arch/arm64/boot/Image)"
-            
-            # 检查是否有DTB文件
-            if ls out/arch/arm64/boot/dts/*/*.dtb 2>/dev/null; then
-              echo "DTB files found:"
-              ls -la out/arch/arm64/boot/dts/*/*.dtb | head -5
-            fi
+            echo "Image size: $(du -h out/arch/arm64/boot/Image)" 
           else
             echo "❌ Kernel build failed!"
             echo "=== Last 100 lines of error log ==="
@@ -390,6 +380,7 @@ jobs:
 
           # 修改 AnyKernel3 配置
           cd output
+          rm -rf ramdisk patch modules
 
           # 备份原始 anykernel.sh
           cp anykernel.sh anykernel.sh.bak
@@ -486,7 +477,7 @@ jobs:
           echo "=== 创建 ZIP 包: $ZIP_NAME ==="
 
           # 创建 ZIP 包
-          zip -r9 "$ZIP_NAME" * -x "*.bak"
+          zip -r9 "$ZIP_NAME" . -x "*.bak" "*.zip"
 
           # 验证 ZIP 包
           if [ -f "$ZIP_NAME" ]; then
