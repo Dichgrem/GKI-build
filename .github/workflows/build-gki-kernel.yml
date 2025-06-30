@@ -21,10 +21,19 @@ on:
         options:
           - lz4
           - zstd
+      root_solution:
+        description: "Choose root solution to integrate"
+        required: false
+        default: "sukisu"
+        type: choice
+        options:
+          - sukisu
+          - kernelsu
+          - kernelsu-next
       kernel_name:
         description: "Custom kernel name (optional)"
         required: false
-        default: "CustomKernel"
+        default: "GKI"
         type: string
 
 jobs:
@@ -248,15 +257,25 @@ jobs:
           echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
           echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
 
-      - name: Install SukiSU‑Ultra
+      - name: Install root solution
         run: |
-          # 1. 下载并切换内核目录
           cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
           export KCONFIG_CONFIG=myconfig
 
-          # 2. 集成 SukiSU-Ultra
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
-          echo "✅ 完成 SukiSU‑Ultra（配置：$KCONFIG_CONFIG）"
+          echo "👉 选择的 Root 方案：${{ github.event.inputs.root_solution }}"
+          if [ "${{ github.event.inputs.root_solution }}" = "kernelsu" ]; then
+            echo "✅ 集成 KernelSU"
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          elif [ "${{ github.event.inputs.root_solution }}" = "kernelsu-next" ]; then
+            echo "✅ 集成 KernelSU-Next"
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          elif [ "${{ github.event.inputs.root_solution }}" = "sukisu" ]; then
+            echo "✅ 集成 SukiSU-Ultra"
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+          else
+            echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}"
+            exit 1
+          fi
 
       - name: Build kernel
         run: |
@@ -505,4 +524,4 @@ jobs:
         with:
           name: ${{ env.ZIP_NAME }}
           path: kernel/output/${{ env.ZIP_NAME }}
-          retention-days: 30
+          retention-days: 25
