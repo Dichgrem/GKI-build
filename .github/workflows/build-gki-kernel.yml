@@ -57,7 +57,7 @@ jobs:
             zstd rsync ca-certificates wget \
             pahole dwarves zip
 
-          # 安装更新的GCC以满足内核版本要求
+          # 安装GCC以满足内核版本要求
           sudo apt-get install -y gcc-9 g++-9
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
@@ -78,12 +78,6 @@ jobs:
       - name: Setup toolchains
         run: |
           cd $GITHUB_WORKSPACE/kernel
-
-          echo "=== 下载 ARM GCC 工具链 ==="
-          # 下载ARM GCC工具链
-          git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
-            ./toolchains/gcc-arm-4.9
 
           echo "=== 下载 Clang 工具链 ==="
           # 创建 Clang 目录
@@ -119,42 +113,6 @@ jobs:
 
           # 返回 kernel 目录
           cd $GITHUB_WORKSPACE/kernel
-
-          echo "=== 验证工具链二进制文件 ==="
-          # 验证关键工具存在
-          echo "检查 Clang 二进制文件..."
-          if [ -f "./toolchains/clang-14/bin/clang" ]; then
-              echo "✓ clang 存在"
-              ls -la ./toolchains/clang-14/bin/clang
-          else
-              echo "✗ clang 不存在，检查目录结构:"
-              find ./toolchains/clang-14 -name "clang" -type f 2>/dev/null || echo "未找到 clang 二进制文件"
-              exit 1
-          fi
-
-          echo "检查 aarch64-linux-gnu 工具..."
-          if ls ./toolchains/clang-14/bin/aarch64-linux-gnu-* 1> /dev/null 2>&1; then
-              echo "✓ aarch64-linux-gnu 工具存在"
-              ls -la ./toolchains/clang-14/bin/aarch64-linux-gnu-* | head -3
-          else
-              echo "✗ aarch64-linux-gnu 工具不存在"
-          fi
-
-          echo "检查 LLVM 工具..."
-          if ls ./toolchains/clang-14/bin/llvm-* 1> /dev/null 2>&1; then
-              echo "✓ LLVM 工具存在"
-              ls -la ./toolchains/clang-14/bin/llvm-* | head -3
-          else
-              echo "✗ LLVM 工具不存在"
-          fi
-
-          echo "检查 ARM GCC 工具..."
-          if ls ./toolchains/gcc-arm-4.9/bin/arm-linux-androideabi-* 1> /dev/null 2>&1; then
-              echo "✓ ARM GCC 工具存在"
-              ls -la ./toolchains/gcc-arm-4.9/bin/arm-linux-androideabi-* | head -3
-          else
-              echo "✗ ARM GCC 工具不存在"
-          fi
 
           echo "=== 最终目录结构 ==="
           echo "kernel/"
@@ -235,8 +193,8 @@ jobs:
           EOF
 
             # Configure compression algorithm
-            if [ "${{ inputs.zram_algorithm }}" = "zstd" ]; then
-              cat >> myconfig << EOF
+          if [ "${{ inputs.zram_algorithm }}" = "zstd" ]; then
+            cat >> myconfig << EOF
           CONFIG_CRYPTO_ZSTD=y
           CONFIG_ZRAM_DEF_COMP="zstd"
           CONFIG_ZRAM_DEF_COMP_ZSTD=y
@@ -293,17 +251,19 @@ jobs:
           export KCONFIG_CONFIG=$PWD/myconfig
 
           # 设置工具链路径变量
-          CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-14/bin
-          GCC_ARM_PATH=$GITHUB_WORKSPACE/kernel/toolchains/gcc-arm-4.9/bin
+          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-14/bin
+          export PATH=$CLANG_PATH:$PATH
+
 
           # 验证所有必需的工具
-          echo "=== Verifying required tools ==="
-          $CLANG_PATH/clang --version | head -2
-          $CLANG_PATH/aarch64-linux-gnu-gcc --version | head -1 || echo "aarch64-linux-gnu-gcc not found"
-          $GCC_ARM_PATH/arm-linux-androideabi-gcc --version | head -1
-          test -f $CLANG_PATH/ld.lld && echo "ld.lld found" || echo "ld.lld not found"
-          gcc --version | head -1
-          echo "================================"
+          echo "=== 验证编译器路径 ==="
+          which clang
+          clang --version
+          echo "=== 验证 clang 是否支持 --target ==="
+          clang --target=aarch64-linux-gnu -v -c /dev/null -o /dev/null || echo "❌ 不支持"
+          echo "=== 验证 binutils 是否可用 ==="
+          which llvm-objcopy
+          which llvm-strip
 
           # 清理构建目录
           rm -rf out
@@ -314,20 +274,22 @@ jobs:
 
           # 编译内核
           make -j$(nproc) O=out WERROR=0 \
-              KCFLAGS="-Wno-error=frame-larger-than= -O3 -pipe" \
-              KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
-              HOSTCFLAGS="-O3 -pipe" \
-              HOSTCXXFLAGS="-O3 -pipe" \
-              NM=$CLANG_PATH/llvm-nm \
-              OBJCOPY=$CLANG_PATH/llvm-objcopy \
-              LD=$CLANG_PATH/ld.lld \
-              CROSS_COMPILE=$CLANG_PATH/aarch64-linux-gnu- \
-              CROSS_COMPILE_ARM32=$GCC_ARM_PATH/arm-linux-androideabi- \
-              CC=$CLANG_PATH/clang \
-              AR=$CLANG_PATH/llvm-ar \
-              OBJDUMP=$CLANG_PATH/llvm-objdump \
-              STRIP=$CLANG_PATH/llvm-strip \
-              2>&1 | tee out/error.log
+             CC=clang \
+             AR=llvm-ar \
+             LD=ld.lld \
+             NM=llvm-nm \
+             OBJCOPY=llvm-objcopy \
+             OBJDUMP=llvm-objdump \
+             STRIP=llvm-strip \
+             HOSTCC=clang \
+             HOSTCXX=clang++ \
+             CROSS_COMPILE= \
+             CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+             KCFLAGS="--target=aarch64-linux-gnu -O3 -pipe -Wno-error=frame-larger-than=" \
+             KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
+             HOSTCFLAGS="-O3 -pipe" \
+             HOSTCXXFLAGS="-O3 -pipe" \
+             2>&1 | tee out/error.log
 
           # 记录结束时间
           endtime=$(date +'%Y-%m-%d %H:%M:%S')
