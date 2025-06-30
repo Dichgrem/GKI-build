@@ -369,18 +369,6 @@ jobs:
           # 复制内核文件
           cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image output/
 
-          # 如果存在 Image.gz，也复制它
-          if [ -f "source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image.gz" ]; then
-            cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image.gz output/
-          fi
-
-          # 复制 DTB 文件（如果存在）
-          if ls source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb 2>/dev/null; then
-            mkdir -p output/dtbs
-            cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb output/dtbs/
-            echo "DTB files copied to dtbs/"
-          fi
-
           # 修改 AnyKernel3 配置
           cd output
 
@@ -388,52 +376,60 @@ jobs:
           cp anykernel.sh anykernel.sh.bak
 
           # 自定义 anykernel.sh 配置
-          cat > anykernel.sh << 'EOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # osm0sis @ xda-developers
+          cat > anykernel.sh << 'EOF'           
+          ### AnyKernel3 Ramdisk Mod Script
+          ## osm0sis @ xda-developers
 
-          ## AnyKernel setup
-          # begin properties
+          ### AnyKernel setup
+          # global properties
           properties() { '
-          kernel.string=
-          do.devicecheck=1
+          kernel.string=Wild Plus Kernel by TheWildJames or Morgan Weedman
+          do.devicecheck=0
           do.modules=0
-          do.systemless=1
+          do.systemless=0
           do.cleanup=1
           do.cleanuponabort=0
-          device.name1=OnePlus12
-          device.name2=OP594DL1
-          device.name3=PJD110
+          device.name1=corvette
+          device.name2=PJX110
+          device.name3=
           device.name4=
           device.name5=
           supported.versions=
           supported.patchlevels=
+          supported.vendorpatchlevels=
           '; } # end properties
 
-          # shell variables
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=1;
-          ramdisk_compression=auto;
-          patch_vbmeta_flag=auto;
+          ### AnyKernel install
+          ## boot shell variables
+          block=boot
+          is_slot_device=auto
+          ramdisk_compression=auto
+          patch_vbmeta_flag=auto
+          no_magisk_check=1
 
-          ## AnyKernel methods (DO NOT CHANGE)
-          # import patching functions/variables - see for reference
-          . tools/ak3-core.sh;
+          # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+          . tools/ak3-core.sh
 
-          ## AnyKernel file attributes
-          # set permissions/ownership for included ramdisk files
-          set_perm_recursive 0 0 755 644 $ramdisk/*;
-          set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+          kernel_version=$(cat /proc/version | awk -F '-' '{print $1}' | awk '{print $3}')
+          case $kernel_version in
+          5.1*) ksu_supported=true ;;
+          6.1*) ksu_supported=true ;;
+          6.6*) ksu_supported=true ;;
+          *) ksu_supported=false ;;
+          esac
 
-          ## AnyKernel install
-          dump_boot;
+          ui_print " " "  -> ksu_supported: $ksu_supported"
+          $ksu_supported || abort "  -> Non-GKI device, abort."
 
-          # begin ramdisk changes
-
-          # end ramdisk changes
-
-          write_boot;
-          ## end install
+          # boot install
+          if [ -L "/dev/block/bootdevice/by-name/init_boot_a" -o -L "/dev/block/by-name/init_boot_a" ]; then
+            split_boot # for devices with init_boot ramdisk
+            flash_boot # for devices with init_boot ramdisk
+          else
+            dump_boot  # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
+            write_boot # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
+          fi
+          ## end boot install
           EOF
 
           # 创建更新信息文件
@@ -443,7 +439,7 @@ jobs:
           Build Date: $BUILD_DATE
           BBR Enabled: ${{ inputs.enable_bbr }}
           Compiler: Clang 14.0.6
-          Target Device: OnePlus 12 (SM8650)
+          Target Device: OnePlus ACE3 Pro(SM8650)
           Architecture: ARM64
           EOF
 
