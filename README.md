@@ -5,6 +5,8 @@
 
 ## Features
 
+- Use ZyC-clang-21.0.0
+- Use ThinLTO to build
 - Enable O3 optimization level
 - Enable BBR support : Enable bbr congestion control algorithm
 - Enable ZRAM support : You can choose zstd or lz4 compression algorithm

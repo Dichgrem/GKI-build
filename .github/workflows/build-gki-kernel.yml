@@ -173,7 +173,7 @@ jobs:
           CONFIG_ZSMALLOC_STAT=y
           EOF
 
-            # Configure compression algorithm
+          # Configure compression algorithm
           if [ "${{ inputs.zram_algorithm }}" = "zstd" ]; then
             cat >> myconfig << EOF
           CONFIG_CRYPTO_ZSTD=y
@@ -190,6 +190,16 @@ jobs:
           EOF
             fi
           fi
+
+          # ThinLTO Support
+          echo "=== Enabling ThinLTO ==="
+          cat >> myconfig << 'EOF'
+          # ThinLTO (Link Time Optimization)
+          CONFIG_CC_IS_CLANG=y
+          CONFIG_CLANG_VERSION_CHECK=y
+          CONFIG_LTO_CLANG=y
+          CONFIG_THINLTO=y
+          EOF
 
           echo "=== Configuration Summary ==="
           echo "BBR Enabled: ${{ inputs.enable_bbr }}"
@@ -235,7 +245,6 @@ jobs:
           export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-21/bin
           export PATH=$CLANG_PATH:$PATH
 
-
           # 验证所有必需的工具
           echo "=== 验证编译器路径 ==="
           which clang
@@ -254,7 +263,10 @@ jobs:
           make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
 
           # 编译内核
-          make -j$(nproc) O=out WERROR=0 \
+          make -j$(nproc) O=out \
+             LLVM=1 \
+             LTO=thin \
+             WERROR=0 \
              KBUILD_NO_WERROR=1 \
              CC=clang \
              AR=llvm-ar \
@@ -272,7 +284,7 @@ jobs:
              HOSTCFLAGS="-O3 -pipe -Wno-error" \
              HOSTCXXFLAGS="-O3 -pipe -Wno-error" \
              2>&1 | tee out/error.log
-             
+
           tail -n 100 out/error.log
 
           # 记录结束时间
@@ -394,7 +406,7 @@ jobs:
           Kernel Version: $KERNEL_VERSION
           Build Date: $BUILD_DATE
           BBR Enabled: ${{ inputs.enable_bbr }}
-          Compiler: Clang 14.0.6
+          Compiler: Clang 21.0.0
           Target Device: OnePlus ACE3 Pro(SM8650)
           Architecture: ARM64
           EOF
