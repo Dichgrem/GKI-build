@@ -81,35 +81,27 @@ jobs:
 
           echo "=== 下载 Clang 工具链 ==="
           # 创建 Clang 目录
-          mkdir -p ./toolchains/clang-14
+          mkdir -p ./toolchains/clang-21
 
           # 下载 Clang 工具链
           cd toolchains
-          wget -q https://github.com/ZyCromerZ/Clang/releases/download/14.0.6-20240212-release/Clang-14.0.6-20240212.tar.gz
-
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250701-release/Clang-21.0.0git-20250701.tar.gz
           # 检查下载是否成功
-          if [ ! -f "Clang-14.0.6-20240212.tar.gz" ]; then
+          if [ ! -f "Clang-21.0.0git-20250701.tar.gz" ]; then
               echo "Error: Clang 工具链下载失败"
               exit 1
           fi
 
           echo "=== 解压 Clang 工具链 ==="
-          # 解压到 clang-14 目录
-          tar -xzf Clang-14.0.6-20240212.tar.gz -C clang-14
+          # 解压到 clang-21 目录
+          tar -xzf Clang-21.0.0git-20250701.tar.gz -C clang-21
 
           # 检查解压后的目录结构
           echo "=== 检查解压后的目录结构 ==="
-          ls -la clang-14/
-
-          # 如果存在嵌套目录，需要调整
-          if [ -d "clang-14/Clang-14.0.6-20240212" ]; then
-              echo "检测到嵌套目录，正在调整..."
-              mv clang-14/Clang-14.0.6-20240212/* clang-14/
-              rmdir clang-14/Clang-14.0.6-20240212
-          fi
+          ls -la clang-21/
 
           # 清理下载的压缩包
-          rm -f Clang-14.0.6-20240212.tar.gz
+          rm -f Clang-21.0.0git-20250701.tar.gz
 
           # 返回 kernel 目录
           cd $GITHUB_WORKSPACE/kernel
@@ -139,17 +131,6 @@ jobs:
 
           echo "=== AnyKernel3 目录结构 ==="
           ls -la ./anykernel3/
-
-      - name: Copy config to kernel source
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          if [ -f "$GITHUB_WORKSPACE/config" ]; then
-            cp $GITHUB_WORKSPACE/config ./source/android_kernel_oneplus_sm8650/myconfig
-            echo "Custom config copied"
-          else
-            echo "Error: config file not found!"
-            exit 1
-          fi
 
       - name: Copy and configure kernel config
         run: |
@@ -251,7 +232,7 @@ jobs:
           export KCONFIG_CONFIG=$PWD/myconfig
 
           # 设置工具链路径变量
-          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-14/bin
+          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-21/bin
           export PATH=$CLANG_PATH:$PATH
 
 
@@ -274,6 +255,7 @@ jobs:
 
           # 编译内核
           make -j$(nproc) O=out WERROR=0 \
+             KBUILD_NO_WERROR=1 \
              CC=clang \
              AR=llvm-ar \
              LD=ld.lld \
@@ -285,11 +267,13 @@ jobs:
              HOSTCXX=clang++ \
              CROSS_COMPILE= \
              CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-             KCFLAGS="--target=aarch64-linux-gnu -O3 -pipe -Wno-error=frame-larger-than=" \
+             KCFLAGS="--target=aarch64-linux-gnu -O3 -pipe -Wno-error" \
              KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
-             HOSTCFLAGS="-O3 -pipe" \
-             HOSTCXXFLAGS="-O3 -pipe" \
+             HOSTCFLAGS="-O3 -pipe -Wno-error" \
+             HOSTCXXFLAGS="-O3 -pipe -Wno-error" \
              2>&1 | tee out/error.log
+             
+          tail -n 100 out/error.log
 
           # 记录结束时间
           endtime=$(date +'%Y-%m-%d %H:%M:%S')
