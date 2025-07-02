@@ -21,6 +21,14 @@ on:
         options:
           - lz4
           - zstd
+      device:
+        description: "Target OnePlus device"
+        required: true
+        default: "corvette"
+        type: choice
+        options:
+          - salami # OnePlus 11
+          - corvette # OnePlus ACE3 Pro
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -43,6 +51,7 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
+      WORKDIR: ${{ github.workspace }}/kernel
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,16 +122,59 @@ jobs:
           ls -la ./toolchains/
           echo "工具链设置完成 ==="
 
-      - name: Clone kernel source
+      - name: Determine kernel repo & branch and set device variables
+        id: vars
         run: |
-          cd $GITHUB_WORKSPACE/kernel
+          DEV=${{ github.event.inputs.device }}
+          case "$DEV" in
+            corvette)
+              REPO=https://github.com/crdroidandroid/android_kernel_oneplus_sm8650.git
+              DEVICE_CODENAME=corvette
+              DEVICE_NAME="OnePlus ACE3 Pro"
+              SOC_PLATFORM=sm8650
+              KERNEL_DIR=android_kernel_oneplus_sm8650
+              ;;
+            salami)
+              REPO=https://github.com/crdroidandroid/android_kernel_oneplus_sm8550.git
+              DEVICE_CODENAME=salami
+              DEVICE_NAME="OnePlus 11"
+              SOC_PLATFORM=sm8550
+              KERNEL_DIR=android_kernel_oneplus_sm8550
+              ;;
+            *)
+              echo "Unsupported device: $DEV"
+              exit 1
+              ;;
+          esac
+          echo "REPO=$REPO" >> $GITHUB_ENV
+          echo "DEVICE_CODENAME=$DEVICE_CODENAME" >> $GITHUB_ENV
+          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
+          echo "SOC_PLATFORM=$SOC_PLATFORM" >> $GITHUB_ENV
+          echo "KERNEL_DIR=$KERNEL_DIR" >> $GITHUB_ENV
+
+          echo "=== Device Configuration ==="
+          echo "Device: $DEVICE_NAME ($DEVICE_CODENAME)"
+          echo "SoC Platform: $SOC_PLATFORM"
+          echo "Repository: $REPO"
+          echo "Kernel Directory: $KERNEL_DIR"
+
+      - name: Clone Kernel Source
+        run: |
+          mkdir -p "$WORKDIR/source"
+          if [ -z "$BRANCH" ]; then
+            echo "BRANCH 未设置，自动检测默认分支..."
+            BRANCH=$(git ls-remote --symref "$REPO" HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+            echo "检测到默认分支为: $BRANCH"
+          fi
+
+          echo "Cloning $REPO branch $BRANCH into $WORKDIR/source/$KERNEL_DIR"
           git clone --depth=1 \
-            https://github.com/crdroidandroid/android_kernel_oneplus_sm8650.git \
-            ./source/android_kernel_oneplus_sm8650
+            --branch "$BRANCH" \
+            "$REPO" \
+            "$WORKDIR/source/$KERNEL_DIR"
 
           echo "=== 内核源码目录结构 ==="
-          echo "kernel/source/"
-          ls -la ./source/
+          ls -la "$WORKDIR/source/"
 
       - name: Clone AnyKernel3
         run: |
@@ -136,13 +188,13 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           if [ -f "$GITHUB_WORKSPACE/config" ]; then
-            cp $GITHUB_WORKSPACE/config ./source/android_kernel_oneplus_sm8650/myconfig
+            cp $GITHUB_WORKSPACE/config ./source/$KERNEL_DIR/myconfig
           else
             echo "Error: config file not found!"
             exit 1
           fi
 
-          cd source/android_kernel_oneplus_sm8650
+          cd source/$KERNEL_DIR
 
           # Configure BBR if enabled
           if [ "${{ inputs.enable_bbr }}" = "true" ]; then
@@ -202,13 +254,15 @@ jobs:
           EOF
 
           echo "=== Configuration Summary ==="
+          echo "Device: $DEVICE_NAME ($DEVICE_CODENAME)"
+          echo "SoC Platform: $SOC_PLATFORM"
           echo "BBR Enabled: ${{ inputs.enable_bbr }}"
           echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
           echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
 
       - name: Install root solution
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
           export KCONFIG_CONFIG=myconfig
 
           echo "👉 选择的 Root 方案：${{ github.event.inputs.root_solution }}"
@@ -230,11 +284,12 @@ jobs:
 
       - name: Build kernel
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
 
           # 记录开始时间
           starttime=$(date +'%Y-%m-%d %H:%M:%S')
           echo "Build started at: $starttime"
+          echo "Building for: $DEVICE_NAME ($DEVICE_CODENAME) - $SOC_PLATFORM"
 
           # 设置环境变量
           export ARCH=arm64
@@ -293,7 +348,7 @@ jobs:
 
       - name: Check build results
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/android_kernel_oneplus_sm8650
+          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
           echo "=== Build Results ==="
           if [ -f "out/arch/arm64/boot/Image" ]; then
             echo "✅ Kernel build successful!"
@@ -319,7 +374,7 @@ jobs:
           fi
 
           # 获取内核版本信息
-          cd source/android_kernel_oneplus_sm8650
+          cd source/$KERNEL_DIR
           KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
           BUILD_DATE=$(date +'%Y%m%d_%H%M')
 
@@ -329,12 +384,14 @@ jobs:
           echo "内核名称: $KERNEL_NAME"
           echo "内核版本: $KERNEL_VERSION"
           echo "构建日期: $BUILD_DATE"
+          echo "目标设备: $DEVICE_NAME ($DEVICE_CODENAME)"
+          echo "SoC平台: $SOC_PLATFORM"
 
           # 复制 AnyKernel3 模板到输出目录
           cp -r anykernel3/* output/
 
           # 复制内核文件
-          cp source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image output/
+          cp source/$KERNEL_DIR/out/arch/arm64/boot/Image output/
 
           # 修改 AnyKernel3 配置
           cd output
@@ -405,9 +462,13 @@ jobs:
           Kernel Name: $KERNEL_NAME
           Kernel Version: $KERNEL_VERSION
           Build Date: $BUILD_DATE
+          Target Device: $DEVICE_NAME ($DEVICE_CODENAME)
+          SoC Platform: $SOC_PLATFORM
           BBR Enabled: ${{ inputs.enable_bbr }}
+          ZRAM Enabled: ${{ inputs.enable_zram }}
+          ZRAM Algorithm: ${{ inputs.zram_algorithm }}
+          Root Solution: ${{ inputs.root_solution }}
           Compiler: Clang 21.0.0
-          Target Device: OnePlus ACE3 Pro(SM8650)
           Architecture: ARM64
           EOF
 
@@ -430,7 +491,7 @@ jobs:
             BBR_SUFFIX="_BBR"
           fi
 
-          ZIP_NAME="${KERNEL_NAME}${BBR_SUFFIX}_${BUILD_DATE}.zip"
+          ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}_${BUILD_DATE}.zip"
 
           echo "=== 创建 ZIP 包: $ZIP_NAME ==="
 
@@ -458,12 +519,12 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-build-${{ github.run_number }}
+          name: kernel-build-${{ env.DEVICE_CODENAME }}-${{ github.run_number }}
           path: |
-            kernel/source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/Image*
-            kernel/source/android_kernel_oneplus_sm8650/out/arch/arm64/boot/dts/*/*.dtb
-            kernel/source/android_kernel_oneplus_sm8650/out/error.log
-            kernel/source/android_kernel_oneplus_sm8650/out/.config
+            kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
+            kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
+            kernel/source/${{ env.KERNEL_DIR }}/out/error.log
+            kernel/source/${{ env.KERNEL_DIR }}/out/.config
             kernel/output/*.zip
             kernel/output/kernel_info.txt
 
