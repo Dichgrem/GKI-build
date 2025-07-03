@@ -29,6 +29,14 @@ on:
         options:
           - salami # OnePlus 11
           - corvette # OnePlus ACE3 Pro
+      config_source:
+        description: "Choose config source for myconfig"
+        required: true
+        default: "repo"
+        type: choice
+        options:
+          - repo # 使用仓库根目录下的 config
+          - default # 使用源码仓库的默认 defconfig（NoGKI）
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -187,11 +195,34 @@ jobs:
       - name: Copy and configure kernel config
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          if [ -f "$GITHUB_WORKSPACE/config" ]; then
-            cp $GITHUB_WORKSPACE/config ./source/$KERNEL_DIR/myconfig
+
+          if [ "${{ github.event.inputs.config_source }}" = "repo" ]; then
+            echo "👉 使用仓库 config 目录下的 config_${{ github.event.inputs.device }} 作为 myconfig"
+            
+            # 检查对应设备的配置文件是否存在
+            CONFIG_FILE="config/config_${{ github.event.inputs.device }}"
+            if [ ! -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
+              echo "❌ 错误：配置文件 $CONFIG_FILE 不存在"
+              echo "可用的配置文件："
+              ls -la "$GITHUB_WORKSPACE/config/"
+              exit 1
+            fi
+            
+            echo "✅ 找到配置文件: $CONFIG_FILE"
+            cp "$GITHUB_WORKSPACE/$CONFIG_FILE" "source/$KERNEL_DIR/myconfig"
+                        
           else
-            echo "Error: config file not found!"
-            exit 1
+            echo "👉 使用源码仓库的默认 arm64 defconfig 生成 myconfig"
+            cd source/$KERNEL_DIR
+
+            # 使用默认的 arm64 defconfig
+            make O=out ARCH=arm64 defconfig
+
+            # 将生成的 .config 重命名为 myconfig
+            cp out/.config myconfig
+
+            # 回到 kernel 根目录
+            cd $GITHUB_WORKSPACE/kernel
           fi
 
           cd source/$KERNEL_DIR
@@ -311,8 +342,7 @@ jobs:
           which llvm-strip
 
           # 清理构建目录
-          rm -rf out
-          mkdir -p out
+          rm -rf out && mkdir -p out
 
           # 生成默认配置
           make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
@@ -443,7 +473,7 @@ jobs:
             echo "✅ ZIP 包创建成功!"
             echo "包名: $ZIP_NAME"
             echo "大小: $(du -h "$ZIP_NAME")"
-            
+
             # 显示 ZIP 包内容
             echo "=== ZIP 包内容 ==="
             unzip -l "$ZIP_NAME" | head -20
