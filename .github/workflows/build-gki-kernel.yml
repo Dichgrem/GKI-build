@@ -64,7 +64,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies and update GCC
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -72,12 +72,8 @@ jobs:
             git libncurses-dev libssl-dev \
             libelf-dev lzop python3 unzip xz-utils \
             zstd rsync ca-certificates wget \
-            pahole dwarves zip
+            pahole dwarves zip gcc g++
 
-          # 安装GCC以满足内核版本要求
-          sudo apt-get install -y gcc-9 g++-9
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
           # 验证GCC版本
           gcc --version
 
@@ -130,7 +126,7 @@ jobs:
           ls -la ./toolchains/
           echo "工具链设置完成 ==="
 
-      - name: Determine kernel repo & branch and set device variables
+      - name: Determine kernel repo & branch
         id: vars
         run: |
           DEV=${{ github.event.inputs.device }}
@@ -198,7 +194,7 @@ jobs:
 
           if [ "${{ github.event.inputs.config_source }}" = "repo" ]; then
             echo "👉 使用仓库 config 目录下的 config_${{ github.event.inputs.device }} 作为 myconfig"
-            
+
             # 检查对应设备的配置文件是否存在
             CONFIG_FILE="config/config_${{ github.event.inputs.device }}"
             if [ ! -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
@@ -207,10 +203,10 @@ jobs:
               ls -la "$GITHUB_WORKSPACE/config/"
               exit 1
             fi
-            
+
             echo "✅ 找到配置文件: $CONFIG_FILE"
             cp "$GITHUB_WORKSPACE/$CONFIG_FILE" "source/$KERNEL_DIR/myconfig"
-                        
+
           else
             echo "👉 使用源码仓库的默认 arm64 defconfig 生成 myconfig"
             cd source/$KERNEL_DIR
@@ -300,12 +296,15 @@ jobs:
           if [ "${{ github.event.inputs.root_solution }}" = "kernelsu" ]; then
             echo "✅ 集成 KernelSU"
             curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+            echo "ROOT_SUFFIX=_KernelSU" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.root_solution }}" = "kernelsu-next" ]; then
             echo "✅ 集成 KernelSU-Next"
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+            echo "ROOT_SUFFIX=_KernelSU-Next" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.root_solution }}" = "sukisu" ]; then
             echo "✅ 集成 SukiSU-Ultra"
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+            echo "ROOT_SUFFIX=_SukiSU" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.root_solution }}" = "none" ]; then
           echo "ℹ️ 未选择任何 Root 方案，跳过"
           else
@@ -336,7 +335,7 @@ jobs:
           which clang
           clang --version
           echo "=== 验证 clang 是否支持 --target ==="
-          clang --target=aarch64-linux-gnu -v -c /dev/null -o /dev/null || echo "❌ 不支持"
+          clang --target=aarch64-linux-gnu -fsyntax-only -x c /dev/null || echo "❌ clang 不支持 aarch64 目标"
           echo "=== 验证 binutils 是否可用 ==="
           which llvm-objcopy
           which llvm-strip
@@ -424,8 +423,7 @@ jobs:
           cp source/$KERNEL_DIR/out/arch/arm64/boot/Image output/
 
           # 修改 AnyKernel3 配置
-          cd output
-          rm -rf ramdisk patch modules
+          cd output && rm -rf ramdisk patch modules
 
           # 创建更新信息文件
           cat > kernel_info.txt << EOF
@@ -485,6 +483,17 @@ jobs:
           # 保存包名供后续步骤使用
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
+      - name: Compress vmlinux
+        if: always()
+        run: |
+          VMLINUX=kernel/source/${{ env.KERNEL_DIR }}/out/vmlinux
+          if [ -f "$VMLINUX" ]; then
+            echo "✅ vmlinux exists, compressing..."
+            gzip -c "$VMLINUX" > "${VMLINUX}.gz"
+          else
+            echo "⚠️ vmlinux not found, skipping compression"
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -493,6 +502,7 @@ jobs:
           path: |
             kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
             kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
+            kernel/source/${{ env.KERNEL_DIR }}/out/vmlinux.gz
             kernel/source/${{ env.KERNEL_DIR }}/out/error.log
             kernel/source/${{ env.KERNEL_DIR }}/out/.config
             kernel/output/*.zip
