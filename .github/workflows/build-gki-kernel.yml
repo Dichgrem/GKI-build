@@ -457,6 +457,7 @@ jobs:
 
           # 记录结束时间
           endtime=$(date +'%Y-%m-%d %H:%M:%S')
+          echo "Build started at: $starttime"
           echo "Build finished at: $endtime"
 
       - name: Check build results
@@ -466,6 +467,7 @@ jobs:
           if [ -f "out/arch/arm64/boot/Image" ]; then
             echo "✅ Kernel build successful!"
             ls -la out/arch/arm64/boot/
+            ls -la out/vmlinux
             echo "Image size: $(du -h out/arch/arm64/boot/Image)" 
           else
             echo "❌ Kernel build failed!"
@@ -543,7 +545,12 @@ jobs:
             BBR_SUFFIX="_BBR"
           fi
 
-          ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}_${BUILD_DATE}.zip"
+          SUSFS_NAME=""
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+            BBR_SUFFIX="_Susfs"
+          fi
+
+          ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}${SUSFS_NAME}_${BUILD_DATE}.zip"
 
           echo "=== 创建 ZIP 包: $ZIP_NAME ==="
 

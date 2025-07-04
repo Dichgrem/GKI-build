@@ -40,7 +40,10 @@ make -j$(nproc) O=out \
   2>&1 | tee out/error.log
 
 tail -n 100 out/error.log
+ls -la out/arch/arm64/boot/
+ls -la out/vmlinux
 
 # 记录结束时间
 endtime=$(date +'%Y-%m-%d %H:%M:%S')
+echo "Build started at: $starttime"
 echo "Build finished at: $endtime"
