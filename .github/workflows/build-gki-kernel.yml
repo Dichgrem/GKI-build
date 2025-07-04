@@ -189,7 +189,10 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ./anykernel3
-
+          cd $GITHUB_WORKSPACE/kernel
+          # 使用aarch64组件
+          git clone --depth=1 --branch arm64-tools https://github.com/osm0sis/AnyKernel3.git anykernel3-tools
+          cp -f ./anykernel3-tools/* anykernel3/tools/
           echo "=== AnyKernel3 目录结构 ==="
           ls -la ./anykernel3/
 
