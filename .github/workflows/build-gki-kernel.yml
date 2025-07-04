@@ -3,6 +3,11 @@ name: Build Android GKI Kernel
 on:
   workflow_dispatch:
     inputs:
+      enable_susfs:
+        description: "Enable susfs support"
+        required: false
+        default: "ture"
+        type: boolean
       enable_bbr:
         description: "Enable BBR TCP Congestion Control"
         required: false
@@ -223,6 +228,37 @@ jobs:
 
           cd source/$KERNEL_DIR
 
+          # Configure susfs if enabled
+          if [ "${{ inputs.enable_susfs }}" = "true" ];then
+            echo "=== Enabling susfs support ==="
+            cat >> myconfig << EOF
+            CONFIG_MODULES=y
+            CONFIG_KPROBES=y
+            CONFIG_HAVE_KPROBES=y
+            CONFIG_KPROBE_EVENTS=y
+            CONFIG_OVERLAY_FS=y
+            CONFIG_KSU=y
+            CONFIG_KSU_SUSFS=y
+            CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+            CONFIG_KSU_SUSFS_SUS_PATH=y
+            CONFIG_KSU_SUSFS_SUS_MOUNT=y
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+            CONFIG_KSU_SUSFS_SUS_KSTAT=y
+            CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+            CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+            CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+            CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+            CONFIG_KSU_SUSFS_ENABLE_LOG=y
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+            CONFIG_KSU_SUSFS_SUS_SU=y
+            CONFIG_TMPFS_XATTR=y
+            CONFIG_TMPFS_POSIX_ACL=y
+            EOF
+            fi
+
           # Configure BBR if enabled
           if [ "${{ inputs.enable_bbr }}" = "true" ]; then
             echo "=== Enabling BBR TCP Congestion Control ==="
@@ -261,7 +297,7 @@ jobs:
           # CONFIG_ZRAM_DEF_COMP_LZ4 is not set
           EOF
             else
-              cat >> myconfig << EOF
+            cat >> myconfig << EOF
           CONFIG_CRYPTO_LZ4=y
           CONFIG_CRYPTO_LZ4HC=y
           CONFIG_ZRAM_DEF_COMP="lz4"
@@ -286,6 +322,7 @@ jobs:
           echo "BBR Enabled: ${{ inputs.enable_bbr }}"
           echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
           echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
+          echo "Susfs Enabled: ${{ inputs.enable_susfs }}"
 
       - name: Install root solution
         run: |
@@ -310,6 +347,53 @@ jobs:
           else
             echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}"
             exit 1
+          fi
+
+      - name: Susfs patch
+        run: |
+          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
+
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+            # 获取内核版本，例如 "6.1.130"
+            KERNEL_VER=$(make kernelversion)
+            echo "🔍 Detected kernel version: $KERNEL_VER"
+
+            # 提取主版本和次版本，生成分支名
+            KERNEL_MAJOR=$(echo "$KERNEL_VER" | cut -d. -f1)
+            KERNEL_MINOR=$(echo "$KERNEL_VER" | cut -d. -f2)
+
+            # 自动推测 Android 版本（你可以改为硬编码映射表以更严谨）
+            if [ "$KERNEL_MAJOR" = "6" ] && [ "$KERNEL_MINOR" = "1" ]; then
+              SUSFS_BRANCH="gki-android14-6.1"
+              SUSFS_PATCH="50_add_susfs_in_gki-android14-6.1.patch"
+            elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "15" ]; then
+              SUSFS_BRANCH="gki-android14-5.15"
+              SUSFS_PATCH="50_add_susfs_in_gki-android14-5.15.patch"
+            elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "10" ]; then
+              SUSFS_BRANCH="gki-android13-5.10"
+              SUSFS_PATCH="50_add_susfs_in_gki-android13-5.10.patch"
+            else
+              echo "❌ Unsupported kernel version: $KERNEL_VER"
+              exit 1
+            fi
+
+            echo "🌿 Cloning susfs4ksu branch: $SUSFS_BRANCH"
+            git clone https://gitlab.com/simonpunk/susfs4ksu.git
+            cd susfs4ksu
+            git switch $SUSFS_BRANCH || { echo "❌ Failed to switch to branch $SUSFS_BRANCH"; exit 1; }
+            cd ..
+
+            echo "📁 Copying susfs source and headers"
+            cp susfs4ksu/kernel_patches/fs/* fs/
+            cp susfs4ksu/kernel_patches/include/linux/* include/linux/
+
+            echo "📦 Applying patch: $SUSFS_PATCH"
+            cp susfs4ksu/kernel_patches/$SUSFS_PATCH .
+            patch -p1 < $SUSFS_PATCH || { echo "❌ Failed to apply patch: $SUSFS_PATCH"; exit 1; }
+
+            echo "✅ Susfs patch applied successfully"
+          else
+            echo "ℹ️ 未启用 Susfs，跳过补丁步骤"
           fi
 
       - name: Build kernel
