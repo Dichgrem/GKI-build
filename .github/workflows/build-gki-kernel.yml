@@ -96,34 +96,27 @@ jobs:
       - name: Setup toolchains
         run: |
           cd $GITHUB_WORKSPACE/kernel
-
           echo "=== 下载 Clang 工具链 ==="
           # 创建 Clang 目录
-          mkdir -p ./toolchains/clang-21
-
-          # 下载 Clang 工具链
+          mkdir -p ./toolchains/clang-r536225
+          # 下载 Android 官方 Clang r536225 工具链
           cd toolchains
-          wget -q https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250701-release/Clang-21.0.0git-20250701.tar.gz
+          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r536225.git
           # 检查下载是否成功
-          if [ ! -f "Clang-21.0.0git-20250701.tar.gz" ]; then
+          if [ ! -d "android_prebuilts_clang_host_linux-x86_clang-r536225" ]; then
               echo "Error: Clang 工具链下载失败"
               exit 1
           fi
-
-          echo "=== 解压 Clang 工具链 ==="
-          # 解压到 clang-21 目录
-          tar -xzf Clang-21.0.0git-20250701.tar.gz -C clang-21
-
+          echo "=== 移动工具链文件 ==="
+          # 移动到 clang-r536225 目录
+          mv android_prebuilts_clang_host_linux-x86_clang-r536225/* clang-r536225/
           # 检查解压后的目录结构
           echo "=== 检查解压后的目录结构 ==="
-          ls -la clang-21/
-
-          # 清理下载的压缩包
-          rm -f Clang-21.0.0git-20250701.tar.gz
-
+          ls -la clang-r536225/
+          # 清理临时目录
+          rm -rf android_prebuilts_clang_host_linux-x86_clang-r536225
           # 返回 kernel 目录
           cd $GITHUB_WORKSPACE/kernel
-
           echo "=== 最终目录结构 ==="
           echo "kernel/"
           ls -la ./
@@ -414,7 +407,7 @@ jobs:
           export KCONFIG_CONFIG=$PWD/myconfig
 
           # 设置工具链路径变量
-          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-21/bin
+          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-r536225/bin
           export PATH=$CLANG_PATH:$PATH
 
           # 验证所有必需的工具
