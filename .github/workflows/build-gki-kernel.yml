@@ -98,23 +98,23 @@ jobs:
           cd $GITHUB_WORKSPACE/kernel
           echo "=== 下载 Clang 工具链 ==="
           # 创建 Clang 目录
-          mkdir -p ./toolchains/clang-r536225
-          # 下载 Android 官方 Clang r536225 工具链
+          mkdir -p ./toolchains/clang-r487747c
+          # 下载 Android 官方 Clang r487747c 工具链
           cd toolchains
-          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r536225.git
+          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git
           # 检查下载是否成功
-          if [ ! -d "android_prebuilts_clang_host_linux-x86_clang-r536225" ]; then
+          if [ ! -d "android_prebuilts_clang_host_linux-x86_clang-r487747c" ]; then
               echo "Error: Clang 工具链下载失败"
               exit 1
           fi
           echo "=== 移动工具链文件 ==="
-          # 移动到 clang-r536225 目录
-          mv android_prebuilts_clang_host_linux-x86_clang-r536225/* clang-r536225/
+          # 移动到 clang-r487747c 目录
+          mv android_prebuilts_clang_host_linux-x86_clang-r487747c/* clang-r487747c/
           # 检查解压后的目录结构
           echo "=== 检查解压后的目录结构 ==="
-          ls -la clang-r536225/
+          ls -la clang-r487747c/
           # 清理临时目录
-          rm -rf android_prebuilts_clang_host_linux-x86_clang-r536225
+          rm -rf android_prebuilts_clang_host_linux-x86_clang-r487747c
           # 返回 kernel 目录
           cd $GITHUB_WORKSPACE/kernel
           echo "=== 最终目录结构 ==="
@@ -407,7 +407,7 @@ jobs:
           export KCONFIG_CONFIG=$PWD/myconfig
 
           # 设置工具链路径变量
-          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-r536225/bin
+          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-r487747c/bin
           export PATH=$CLANG_PATH:$PATH
 
           # 验证所有必需的工具
