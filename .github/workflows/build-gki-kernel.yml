@@ -6,7 +6,7 @@ on:
       enable_susfs:
         description: "Enable susfs support"
         required: false
-        default: "ture"
+        default: "true"
         type: boolean
       device:
         description: "Target OnePlus device"
@@ -14,16 +14,15 @@ on:
         default: "corvette"
         type: choice
         options:
-          - salami # OnePlus 11
-          - corvette # OnePlus ACE3 Pro
+          - corvette
       config_source:
         description: "Choose config source for myconfig"
         required: true
         default: "repo"
         type: choice
         options:
-          - repo # 使用仓库根目录下的 config
-          - default # 使用源码仓库的默认 defconfig（NoGKI）
+          - repo
+          - default
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -60,70 +59,67 @@ jobs:
             libelf-dev lzop python3 unzip xz-utils \
             zstd rsync ca-certificates wget \
             pahole dwarves zip gcc g++
-
-          # 验证GCC版本
           gcc --version
 
       - name: Setup directory structure
         run: |
-          # 创建与本地一致的目录结构
-          mkdir -p $GITHUB_WORKSPACE/kernel/toolchains
-          mkdir -p $GITHUB_WORKSPACE/kernel/source
-          mkdir -p $GITHUB_WORKSPACE/kernel/anykernel3
-          mkdir -p $GITHUB_WORKSPACE/kernel/output
-
-          echo "=== Created directory structure ==="
-          ls -la $GITHUB_WORKSPACE/kernel/
+          set -e
+          echo "WORKDIR=$WORKDIR"
+          mkdir -p "$WORKDIR"
+          cd "$WORKDIR"
+          # 与本地一致
+          mkdir -p aarch64-linux-android-4.9
+          mkdir -p arm-linux-androideabi-4.9
+          mkdir -p clang-r547379
+          mkdir -p android_kernel_oneplus_sm8650
+          mkdir -p sm8650-modules
+          mkdir -p anykernel3
+          mkdir -p output
+          echo "=== Created directory structure under $WORKDIR ==="
+          ls -la "$WORKDIR"
 
       - name: Setup toolchains
         run: |
-          cd $GITHUB_WORKSPACE/kernel
-          echo "=== 下载 Clang 工具链 ==="
-          # 创建 Clang 目录
-          mkdir -p ./toolchains/clang-r487747c
-          # 下载 Android 官方 Clang r487747c 工具链
-          cd toolchains
-          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git
-          # 检查下载是否成功
-          if [ ! -d "android_prebuilts_clang_host_linux-x86_clang-r487747c" ]; then
-              echo "Error: Clang 工具链下载失败"
-              exit 1
+          set -e
+          cd "$WORKDIR"
+          echo "=== Downloading and preparing clang-r547379 ==="
+          wget -nv -O clang-r547379.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
+          # extract into clang-r547379, strip top-level if present
+          mkdir -p clang-r547379
+          tar -xvf clang-r547379.tar.gz -C clang-r547379 --strip-components=1
+          echo "clang-r547379 contents:"
+          ls -la clang-r547379 | sed -n '1,200p'
+
+          echo "=== Cloning prebuilts GCC (aarch64 & arm) ==="
+          if [ ! -d "aarch64-linux-android-4.9/.git" ]; then
+            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
+          else
+            echo "aarch64 prebuilts already present"
           fi
-          echo "=== 移动工具链文件 ==="
-          # 移动到 clang-r487747c 目录
-          mv android_prebuilts_clang_host_linux-x86_clang-r487747c/* clang-r487747c/
-          # 检查解压后的目录结构
-          echo "=== 检查解压后的目录结构 ==="
-          ls -la clang-r487747c/
-          # 清理临时目录
-          rm -rf android_prebuilts_clang_host_linux-x86_clang-r487747c
-          # 返回 kernel 目录
-          cd $GITHUB_WORKSPACE/kernel
-          echo "=== 最终目录结构 ==="
-          echo "kernel/"
-          ls -la ./
-          echo "kernel/toolchains/"
-          ls -la ./toolchains/
-          echo "工具链设置完成 ==="
+
+          if [ ! -d "arm-linux-androideabi-4.9/.git" ]; then
+            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
+          else
+            echo "arm prebuilts already present"
+          fi
+
+          echo "Prebuilts aarch64 snapshot:"
+          ls -la aarch64-linux-android-4.9 | sed -n '1,200p'
+          echo "Prebuilts arm snapshot:"
+          ls -la arm-linux-androideabi-4.9 | sed -n '1,200p'
 
       - name: Determine kernel repo & branch
         id: vars
         run: |
-          DEV=${{ github.event.inputs.device }}
+          set -e
+          DEV="${{ github.event.inputs.device }}"
           case "$DEV" in
             corvette)
-              REPO=https://github.com/crdroidandroid/android_kernel_oneplus_sm8650.git
+              REPO=https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650.git
               DEVICE_CODENAME=corvette
               DEVICE_NAME="OnePlus ACE3 Pro"
               SOC_PLATFORM=sm8650
               KERNEL_DIR=android_kernel_oneplus_sm8650
-              ;;
-            salami)
-              REPO=https://github.com/crdroidandroid/android_kernel_oneplus_sm8550.git
-              DEVICE_CODENAME=salami
-              DEVICE_NAME="OnePlus 11"
-              SOC_PLATFORM=sm8550
-              KERNEL_DIR=android_kernel_oneplus_sm8550
               ;;
             *)
               echo "Unsupported device: $DEV"
@@ -142,23 +138,50 @@ jobs:
           echo "Repository: $REPO"
           echo "Kernel Directory: $KERNEL_DIR"
 
-      - name: Clone Kernel Source
+      - name: Clone Kernel source
         run: |
-          mkdir -p "$WORKDIR/source"
-          if [ -z "$BRANCH" ]; then
-            echo "BRANCH 未设置，自动检测默认分支..."
-            BRANCH=$(git ls-remote --symref "$REPO" HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
-            echo "检测到默认分支为: $BRANCH"
+          set -e
+          cd "$WORKDIR"
+          # 使用上一步写入的 REPO 环境变量
+          REPO="${REPO:-}"
+          if [ -z "$REPO" ]; then
+            echo "REPO is not set"
+            exit 1
           fi
 
-          echo "Cloning $REPO branch $BRANCH into $WORKDIR/source/$KERNEL_DIR"
-          git clone --depth=1 \
-            --branch "$BRANCH" \
-            "$REPO" \
-            "$WORKDIR/source/$KERNEL_DIR"
+          # detect default branch if BRANCH not provided
+          if [ -z "${BRANCH}" ]; then
+            echo "BRANCH not set; detecting remote default branch..."
+            BRANCH=$(git ls-remote --symref "$REPO" HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+            echo "Detected default branch: $BRANCH"
+          fi
 
-          echo "=== 内核源码目录结构 ==="
-          ls -la "$WORKDIR/source/"
+          echo "Cloning kernel repo ($REPO) branch: $BRANCH -> $WORKDIR/android_kernel_oneplus_sm8650"
+          rm -rf android_kernel_oneplus_sm8650 || true
+          git clone --depth=1 --branch "$BRANCH" "$REPO" android_kernel_oneplus_sm8650
+
+          echo "Cloning modules repo (OPACE3PRO) -> $WORKDIR/sm8650-modules"
+          if [ ! -d "sm8650-modules/.git" ]; then
+            git clone --depth=1 https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650-modules.git sm8650-modules
+          else
+            echo "sm8650-modules already exists"
+          fi
+
+          echo "Kernel top-level:"
+          ls -la android_kernel_oneplus_sm8650 | sed -n '1,200p'
+          echo "sm8650-modules remotes:"
+          git -C sm8650-modules remote -v || true
+          ls -la sm8650-modules | sed -n '1,200p'
+
+      - name: Show final WORKDIR layout
+        run: |
+          set -e
+          cd "$WORKDIR"
+          echo "Final layout under $WORKDIR:"
+          ls -la
+          echo "Sample clang dir listing:"
+          ls -la clang-r547379 | sed -n '1,200p'
+
 
       - name: Clone AnyKernel3
         run: |
