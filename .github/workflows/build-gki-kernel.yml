@@ -8,24 +8,6 @@ on:
         required: false
         default: "ture"
         type: boolean
-      enable_bbr:
-        description: "Enable BBR TCP Congestion Control"
-        required: false
-        default: "true"
-        type: boolean
-      enable_zram:
-        description: "Enable ZRAM support"
-        required: false
-        default: "true"
-        type: boolean
-      zram_algorithm:
-        description: "ZRAM compression algorithm"
-        required: false
-        default: "lz4"
-        type: choice
-        options:
-          - lz4
-          - zstd
       device:
         description: "Target OnePlus device"
         required: true
@@ -224,101 +206,9 @@ jobs:
 
           cd source/$KERNEL_DIR
 
-          # Configure susfs if enabled
-          if [ "${{ inputs.enable_susfs }}" = "true" ];then
-            echo "=== Enabling susfs support ==="
-            cat >> myconfig << EOF
-            CONFIG_MODULES=y
-            CONFIG_KPROBES=y
-            CONFIG_HAVE_KPROBES=y
-            CONFIG_KPROBE_EVENTS=y
-            CONFIG_OVERLAY_FS=y
-            CONFIG_KSU=y
-            CONFIG_KSU_SUSFS=y
-            CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-            CONFIG_KSU_SUSFS_SUS_PATH=y
-            CONFIG_KSU_SUSFS_SUS_MOUNT=y
-            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-            CONFIG_KSU_SUSFS_SUS_KSTAT=y
-            CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
-            CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-            CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-            CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-            CONFIG_KSU_SUSFS_ENABLE_LOG=y
-            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-            CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-            CONFIG_KSU_SUSFS_SUS_SU=y
-            CONFIG_TMPFS_XATTR=y
-            CONFIG_TMPFS_POSIX_ACL=y
-            EOF
-            fi
-
-          # Configure BBR if enabled
-          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-            echo "=== Enabling BBR TCP Congestion Control ==="
-            cat >> myconfig << EOF
-
-          # BBR TCP Congestion Control
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_DEFAULT_TCP_CONG="bbr"
-          CONFIG_DEFAULT_BBR=y
-          # CONFIG_DEFAULT_CUBIC is not set
-          # CONFIG_DEFAULT_RENO is not set
-          EOF
-          fi
-
-          # Configure ZRAM if enabled
-          if [ "${{ inputs.enable_zram }}" = "true" ]; then
-            echo "=== Enabling ZRAM with ${{ inputs.zram_algorithm }} compression ==="
-            cat >> myconfig << EOF
-
-          # ZRAM Support
-          CONFIG_ZRAM=y
-          CONFIG_ZRAM_DEF_COMP_LZ4=y
-          CONFIG_ZRAM_WRITEBACK=y
-          CONFIG_ZRAM_MEMORY_TRACKING=y
-          CONFIG_ZSMALLOC=y
-          CONFIG_ZSMALLOC_STAT=y
-          EOF
-
-          # Configure compression algorithm
-          if [ "${{ inputs.zram_algorithm }}" = "zstd" ]; then
-            cat >> myconfig << EOF
-          CONFIG_CRYPTO_ZSTD=y
-          CONFIG_ZRAM_DEF_COMP="zstd"
-          CONFIG_ZRAM_DEF_COMP_ZSTD=y
-          # CONFIG_ZRAM_DEF_COMP_LZ4 is not set
-          EOF
-            else
-            cat >> myconfig << EOF
-          CONFIG_CRYPTO_LZ4=y
-          CONFIG_CRYPTO_LZ4HC=y
-          CONFIG_ZRAM_DEF_COMP="lz4"
-          CONFIG_ZRAM_DEF_COMP_LZ4=y
-          EOF
-            fi
-          fi
-
-          # ThinLTO Support
-          echo "=== Enabling ThinLTO ==="
-          cat >> myconfig << 'EOF'
-          # ThinLTO (Link Time Optimization)
-          CONFIG_CC_IS_CLANG=y
-          CONFIG_CLANG_VERSION_CHECK=y
-          CONFIG_LTO_CLANG=y
-          CONFIG_THINLTO=y
-          EOF
-
           echo "=== Configuration Summary ==="
           echo "Device: $DEVICE_NAME ($DEVICE_CODENAME)"
           echo "SoC Platform: $SOC_PLATFORM"
-          echo "BBR Enabled: ${{ inputs.enable_bbr }}"
-          echo "ZRAM Enabled: ${{ inputs.enable_zram }}"
-          echo "ZRAM Algorithm: ${{ inputs.zram_algorithm }}"
-          echo "Susfs Enabled: ${{ inputs.enable_susfs }}"
 
       - name: Install root solution
         run: |
