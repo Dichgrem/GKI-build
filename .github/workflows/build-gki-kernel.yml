@@ -109,17 +109,6 @@ jobs:
           echo "Final layout under $WORKDIR:"
           ls -la
 
-    #  - name: Clone AnyKernel3
-    #    run: |
-    #      cd $GITHUB_WORKSPACE/kernel
-    #      git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ./anykernel3
-    #      cd $GITHUB_WORKSPACE/kernel
-    #      # 使用aarch64组件
-    #      git clone --depth=1 --branch arm64-tools https://github.com/osm0sis/AnyKernel3.git anykernel3-tools
-    #      cp -f ./anykernel3-tools/* anykernel3/tools/
-    #      echo "=== AnyKernel3 目录结构 ==="
-    #      ls -la ./anykernel3/
-
       - name: Copy and configure kernel config
         run: |
           set -euo pipefail
@@ -353,101 +342,36 @@ jobs:
             exit 1
           fi
 
-      # - name: Prepare AnyKernel3 package
-      #   run: |
-      #     cd $GITHUB_WORKSPACE/kernel
+      - name: Replace Image in anykernel3
+        run: |
+          set -e
 
-      #     # 设置内核名称
-      #     KERNEL_NAME="${{ inputs.kernel_name }}"
-      #     if [ -z "$KERNEL_NAME" ]; then
-      #       KERNEL_NAME="CustomKernel"
-      #     fi
+          WORKDIR=ak3_work
+          ZIP_ORIG=anykernel3.zip
+          NEW_ZIP=anykernel3-${{ github.run_number }}.zip
+          NEW_IMAGE=kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image
 
-      #     # 获取内核版本信息
-      #     cd source/$KERNEL_DIR
-      #     KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
-      #     BUILD_DATE=$(date +'%Y%m%d_%H%M')
+          # 创建临时工作目录
+          rm -rf $WORKDIR
+          mkdir -p $WORKDIR
+          cd $WORKDIR
 
-      #     cd $GITHUB_WORKSPACE/kernel
+          # 解压原刷机包，保持目录结构和权限
+          unzip ../$ZIP_ORIG
 
-      #     echo "=== 准备 AnyKernel3 打包 ==="
-      #     echo "内核名称: $KERNEL_NAME"
-      #     echo "内核版本: $KERNEL_VERSION"
-      #     echo "构建日期: $BUILD_DATE"
-      #     echo "目标设备: $DEVICE_NAME ($DEVICE_CODENAME)"
-      #     echo "SoC平台: $SOC_PLATFORM"
+          # 替换 Image 并设置权限 755
+          cp ../$NEW_IMAGE ./Image
+          chmod 755 Image
 
-      #     # 复制 AnyKernel3 模板到输出目录
-      #     cp -r anykernel3/* output/
+          # 重新打包刷机包
+          zip -r ../$NEW_ZIP . -x ".*"
 
-      #     # 复制内核文件
-      #     cp source/$KERNEL_DIR/out/arch/arm64/boot/Image output/
+          cd ..
 
-      #     # 修改 AnyKernel3 配置
-      #     cd output && rm -rf ramdisk patch modules
+          # 验证新 ZIP 结构
+          echo "=== 新刷机包信息 ==="
+          zipinfo $NEW_ZIP
 
-      #     # 创建更新信息文件
-      #     cat > kernel_info.txt << EOF
-      #     Kernel Name: $KERNEL_NAME
-      #     Kernel Version: $KERNEL_VERSION
-      #     Build Date: $BUILD_DATE
-      #     Target Device: $DEVICE_NAME ($DEVICE_CODENAME)
-      #     SoC Platform: $SOC_PLATFORM
-      #     BBR Enabled: ${{ inputs.enable_bbr }}
-      #     ZRAM Enabled: ${{ inputs.enable_zram }}
-      #     ZRAM Algorithm: ${{ inputs.zram_algorithm }}
-      #     Root Solution: ${{ inputs.root_solution }}
-      #     Compiler: Clang 21.0.0
-      #     Architecture: ARM64
-      #     EOF
-
-      #     echo "=== AnyKernel3 准备完成 ==="
-      #     ls -la ./
-
-      # - name: Create AnyKernel3 ZIP package
-      #   run: |
-      #     cd $GITHUB_WORKSPACE/kernel/output
-
-      #     # 设置包名
-      #     KERNEL_NAME="${{ inputs.kernel_name }}"
-      #     if [ -z "$KERNEL_NAME" ]; then
-      #       KERNEL_NAME="CustomKernel"
-      #     fi
-
-      #     BUILD_DATE=$(date +'%Y%m%d_%H%M')
-      #     BBR_SUFFIX=""
-      #     if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-      #       BBR_SUFFIX="_BBR"
-      #     fi
-
-      #     SUSFS_NAME=""
-      #     if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-      #       BBR_SUFFIX="_Susfs"
-      #     fi
-
-      #     ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}${SUSFS_NAME}_${BUILD_DATE}.zip"
-
-      #     echo "=== 创建 ZIP 包: $ZIP_NAME ==="
-
-      #     # 创建 ZIP 包
-      #     zip -r9 "$ZIP_NAME" . -x "*.bak" "*.zip"
-
-      #     # 验证 ZIP 包
-      #     if [ -f "$ZIP_NAME" ]; then
-      #       echo "✅ ZIP 包创建成功!"
-      #       echo "包名: $ZIP_NAME"
-      #       echo "大小: $(du -h "$ZIP_NAME")"
-
-      #       # 显示 ZIP 包内容
-      #       echo "=== ZIP 包内容 ==="
-      #       unzip -l "$ZIP_NAME" | head -20
-      #     else
-      #       echo "❌ ZIP 包创建失败!"
-      #       exit 1
-      #     fi
-
-      #     # 保存包名供后续步骤使用
-      #     echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -463,16 +387,7 @@ jobs:
             ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/error.log
             # 最终配置文件
             ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/.config
-            # 任何生成的 zip 包
-            ${{ github.workspace }}/kernel/output/*.zip
+            # 替换后的 anykernel3.zip
+            ${{ github.workspace }}/anykernel3-${{ github.run_number }}.zip
             # Kernel 信息文件
             ${{ github.workspace }}/kernel/output/kernel_info.txt
-
-
-      # - name: Upload AnyKernel3 ZIP
-      #   uses: actions/upload-artifact@v4
-      #   if: success()
-      #   with:
-      #     name: ${{ env.ZIP_NAME }}
-      #     path: kernel/output/${{ env.ZIP_NAME }}
-      #     retention-days: 25
