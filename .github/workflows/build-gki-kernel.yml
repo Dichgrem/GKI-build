@@ -453,19 +453,26 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-build-${{ env.DEVICE_CODENAME }}-${{ github.run_number }}
+          name: kernel-build-${{ github.run_number }}
           path: |
-            kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
-            kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
-            kernel/source/${{ env.KERNEL_DIR }}/out/error.log
-            kernel/source/${{ env.KERNEL_DIR }}/out/.config
-            kernel/output/*.zip
-            kernel/output/kernel_info.txt
+            # 内核 Image
+            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
+            # Device Tree Blob
+            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
+            # 编译日志
+            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/error.log
+            # 最终配置文件
+            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/.config
+            # 任何生成的 zip 包
+            ${{ github.workspace }}/kernel/output/*.zip
+            # Kernel 信息文件
+            ${{ github.workspace }}/kernel/output/kernel_info.txt
 
-      - name: Upload AnyKernel3 ZIP
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: ${{ env.ZIP_NAME }}
-          path: kernel/output/${{ env.ZIP_NAME }}
-          retention-days: 25
+
+      # - name: Upload AnyKernel3 ZIP
+      #   uses: actions/upload-artifact@v4
+      #   if: success()
+      #   with:
+      #     name: ${{ env.ZIP_NAME }}
+      #     path: kernel/output/${{ env.ZIP_NAME }}
+      #     retention-days: 25
