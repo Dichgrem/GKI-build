@@ -8,13 +8,6 @@ on:
         required: false
         default: "true"
         type: boolean
-      device:
-        description: "Target OnePlus device"
-        required: true
-        default: "corvette"
-        type: choice
-        options:
-          - corvette
       config_source:
         description: "Choose config source for myconfig"
         required: true
@@ -22,7 +15,6 @@ on:
         type: choice
         options:
           - repo
-          - default
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -61,117 +53,54 @@ jobs:
             pahole dwarves zip gcc g++
           gcc --version
 
-      - name: Setup directory structure
+      - name: Setup toolchains & directories
         run: |
           set -e
           echo "WORKDIR=$WORKDIR"
           mkdir -p "$WORKDIR"
           cd "$WORKDIR"
-          # 与本地一致
-          mkdir -p aarch64-linux-android-4.9
-          mkdir -p arm-linux-androideabi-4.9
+
+          # 创建目录结构
           mkdir -p clang-r547379
-          mkdir -p android_kernel_oneplus_sm8650
-          mkdir -p sm8650-modules
           mkdir -p anykernel3
           mkdir -p output
-          echo "=== Created directory structure under $WORKDIR ==="
+
+          # 下载 Clang 工具链
+          echo "=== Downloading Clang toolchain ==="
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r547379.tar.gz
+          tar -xzf clang-r547379.tar.gz -C clang-r547379
+          rm clang-r547379.tar.gz
+
+          # 克隆 GCC 工具链
+          echo "=== Cloning GCC toolchains ==="
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9 --depth=1
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9 --depth=1
+
+          echo "✅ Setup toolchains -> OK"
+
+      - name: Setup & Clone Kernel
+        run: |
+          set -e
+          mkdir -p "$WORKDIR"
+          cd "$WORKDIR"
+
+          # 克隆内核源码
+          echo "👉 Cloning kernel source"
+          rm -rf android_kernel_oneplus_sm8650
+          git clone --depth=1 https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650.git android_kernel_oneplus_sm8650
+
+          # 克隆模块源码
+          echo "👉 Cloning sm8650-modules"
+          rm -rf sm8650-modules
+          git clone --depth=1 https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650-modules.git sm8650-modules
+
+          echo "✅ Kernel source cloned -> android_kernel_oneplus_sm8650"
+          echo "✅ Modules cloned -> sm8650-modules"
+          echo "=== Directory setup complete ==="
           ls -la "$WORKDIR"
-
-      - name: Setup toolchains
-        run: |
-          set -e
-          cd "$WORKDIR"
-          echo "=== Downloading and preparing clang-r547379 ==="
-          wget -nv -O clang-r547379.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
-          # extract into clang-r547379, strip top-level if present
-          mkdir -p clang-r547379
-          tar -xvf clang-r547379.tar.gz -C clang-r547379 --strip-components=1
-          echo "clang-r547379 contents:"
-          ls -la clang-r547379 | sed -n '1,200p'
-
-          echo "=== Cloning prebuilts GCC (aarch64 & arm) ==="
-          if [ ! -d "aarch64-linux-android-4.9/.git" ]; then
-            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
-          else
-            echo "aarch64 prebuilts already present"
-          fi
-
-          if [ ! -d "arm-linux-androideabi-4.9/.git" ]; then
-            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
-          else
-            echo "arm prebuilts already present"
-          fi
-
-          echo "Prebuilts aarch64 snapshot:"
-          ls -la aarch64-linux-android-4.9 | sed -n '1,200p'
-          echo "Prebuilts arm snapshot:"
-          ls -la arm-linux-androideabi-4.9 | sed -n '1,200p'
-
-      - name: Determine kernel repo & branch
-        id: vars
-        run: |
-          set -e
-          DEV="${{ github.event.inputs.device }}"
-          case "$DEV" in
-            corvette)
-              REPO=https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650.git
-              DEVICE_CODENAME=corvette
-              DEVICE_NAME="OnePlus ACE3 Pro"
-              SOC_PLATFORM=sm8650
-              KERNEL_DIR=android_kernel_oneplus_sm8650
-              ;;
-            *)
-              echo "Unsupported device: $DEV"
-              exit 1
-              ;;
-          esac
-          echo "REPO=$REPO" >> $GITHUB_ENV
-          echo "DEVICE_CODENAME=$DEVICE_CODENAME" >> $GITHUB_ENV
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
-          echo "SOC_PLATFORM=$SOC_PLATFORM" >> $GITHUB_ENV
-          echo "KERNEL_DIR=$KERNEL_DIR" >> $GITHUB_ENV
-
-          echo "=== Device Configuration ==="
-          echo "Device: $DEVICE_NAME ($DEVICE_CODENAME)"
-          echo "SoC Platform: $SOC_PLATFORM"
-          echo "Repository: $REPO"
-          echo "Kernel Directory: $KERNEL_DIR"
-
-      - name: Clone Kernel source
-        run: |
-          set -e
-          cd "$WORKDIR"
-          # 使用上一步写入的 REPO 环境变量
-          REPO="${REPO:-}"
-          if [ -z "$REPO" ]; then
-            echo "REPO is not set"
-            exit 1
-          fi
-
-          # detect default branch if BRANCH not provided
-          if [ -z "${BRANCH}" ]; then
-            echo "BRANCH not set; detecting remote default branch..."
-            BRANCH=$(git ls-remote --symref "$REPO" HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
-            echo "Detected default branch: $BRANCH"
-          fi
-
-          echo "Cloning kernel repo ($REPO) branch: $BRANCH -> $WORKDIR/android_kernel_oneplus_sm8650"
-          rm -rf android_kernel_oneplus_sm8650 || true
-          git clone --depth=1 --branch "$BRANCH" "$REPO" android_kernel_oneplus_sm8650
-
-          echo "Cloning modules repo (OPACE3PRO) -> $WORKDIR/sm8650-modules"
-          if [ ! -d "sm8650-modules/.git" ]; then
-            git clone --depth=1 https://github.com/OPACE3PRO/android_kernel_oneplus_sm8650-modules.git sm8650-modules
-          else
-            echo "sm8650-modules already exists"
-          fi
-
-          echo "Kernel top-level:"
-          ls -la android_kernel_oneplus_sm8650 | sed -n '1,200p'
-          echo "sm8650-modules remotes:"
-          git -C sm8650-modules remote -v || true
-          ls -la sm8650-modules | sed -n '1,200p'
+          
+          # 设置 KERNEL_DIR 环境变量
+          echo "KERNEL_DIR=android_kernel_oneplus_sm8650" >> $GITHUB_ENV
 
       - name: Show final WORKDIR layout
         run: |
@@ -179,319 +108,346 @@ jobs:
           cd "$WORKDIR"
           echo "Final layout under $WORKDIR:"
           ls -la
-          echo "Sample clang dir listing:"
-          ls -la clang-r547379 | sed -n '1,200p'
 
-
-      - name: Clone AnyKernel3
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ./anykernel3
-          cd $GITHUB_WORKSPACE/kernel
-          # 使用aarch64组件
-          git clone --depth=1 --branch arm64-tools https://github.com/osm0sis/AnyKernel3.git anykernel3-tools
-          cp -f ./anykernel3-tools/* anykernel3/tools/
-          echo "=== AnyKernel3 目录结构 ==="
-          ls -la ./anykernel3/
+    #  - name: Clone AnyKernel3
+    #    run: |
+    #      cd $GITHUB_WORKSPACE/kernel
+    #      git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ./anykernel3
+    #      cd $GITHUB_WORKSPACE/kernel
+    #      # 使用aarch64组件
+    #      git clone --depth=1 --branch arm64-tools https://github.com/osm0sis/AnyKernel3.git anykernel3-tools
+    #      cp -f ./anykernel3-tools/* anykernel3/tools/
+    #      echo "=== AnyKernel3 目录结构 ==="
+    #      ls -la ./anykernel3/
 
       - name: Copy and configure kernel config
         run: |
-          cd $GITHUB_WORKSPACE/kernel
-
-          if [ "${{ github.event.inputs.config_source }}" = "repo" ]; then
-            echo "👉 使用仓库 config 目录下的 config_${{ github.event.inputs.device }} 作为 myconfig"
-
-            # 检查对应设备的配置文件是否存在
-            CONFIG_FILE="config/config_${{ github.event.inputs.device }}"
-            if [ ! -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
-              echo "❌ 错误：配置文件 $CONFIG_FILE 不存在"
-              echo "可用的配置文件："
-              ls -la "$GITHUB_WORKSPACE/config/"
-              exit 1
-            fi
-
-            echo "✅ 找到配置文件: $CONFIG_FILE"
-            cp "$GITHUB_WORKSPACE/$CONFIG_FILE" "source/$KERNEL_DIR/myconfig"
-
-          else
-            echo "👉 使用源码仓库的默认 arm64 defconfig 生成 myconfig"
-            cd source/$KERNEL_DIR
-
-            # 使用默认的 arm64 defconfig
-            make O=out ARCH=arm64 defconfig
-
-            # 将生成的 .config 重命名为 myconfig
-            cp out/.config myconfig
-
-            # 回到 kernel 根目录
-            cd $GITHUB_WORKSPACE/kernel
-          fi
-
-          cd source/$KERNEL_DIR
-
-          echo "=== Configuration Summary ==="
-          echo "Device: $DEVICE_NAME ($DEVICE_CODENAME)"
-          echo "SoC Platform: $SOC_PLATFORM"
-
-      - name: Install root solution
-        run: |
-          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
-          export KCONFIG_CONFIG=myconfig
-
-          echo "👉 选择的 Root 方案：${{ github.event.inputs.root_solution }}"
-          if [ "${{ github.event.inputs.root_solution }}" = "kernelsu" ]; then
-            echo "✅ 集成 KernelSU"
-            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-            echo "ROOT_SUFFIX=_KernelSU" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.root_solution }}" = "kernelsu-next" ]; then
-            echo "✅ 集成 KernelSU-Next"
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
-            echo "ROOT_SUFFIX=_KernelSU-Next" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.root_solution }}" = "sukisu" ]; then
-            echo "✅ 集成 SukiSU-Ultra"
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
-            echo "ROOT_SUFFIX=_SukiSU" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.root_solution }}" = "none" ]; then
-          echo "ℹ️ 未选择任何 Root 方案，跳过"
-          else
-            echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}"
+          set -euo pipefail
+          echo "WORKDIR=$WORKDIR"
+          if [ -z "${KERNEL_DIR:-}" ]; then
+            echo "KERNEL_DIR is not set. Ensure previous step set it."
             exit 1
           fi
 
-      - name: Susfs patch
-        run: |
-          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
+          SRC="$GITHUB_WORKSPACE/config/config_corvette"
+          KERNEL_PATH="$WORKDIR/$KERNEL_DIR"
+          TARGET_DIR="$KERNEL_PATH/arch/arm64/configs"
+          TARGET="$TARGET_DIR/config_defconfig"
 
-          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-            # 获取内核版本，例如 "6.1.130"
-            KERNEL_VER=$(make kernelversion)
-            echo "🔍 Detected kernel version: $KERNEL_VER"
-
-            # 提取主版本和次版本，生成分支名
-            KERNEL_MAJOR=$(echo "$KERNEL_VER" | cut -d. -f1)
-            KERNEL_MINOR=$(echo "$KERNEL_VER" | cut -d. -f2)
-
-            # 自动推测 Android 版本（你可以改为硬编码映射表以更严谨）
-            if [ "$KERNEL_MAJOR" = "6" ] && [ "$KERNEL_MINOR" = "1" ]; then
-              SUSFS_BRANCH="gki-android14-6.1"
-              SUSFS_PATCH="50_add_susfs_in_gki-android14-6.1.patch"
-            elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "15" ]; then
-              SUSFS_BRANCH="gki-android14-5.15"
-              SUSFS_PATCH="50_add_susfs_in_gki-android14-5.15.patch"
-            elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "10" ]; then
-              SUSFS_BRANCH="gki-android13-5.10"
-              SUSFS_PATCH="50_add_susfs_in_gki-android13-5.10.patch"
-            else
-              echo "❌ Unsupported kernel version: $KERNEL_VER"
-              exit 1
-            fi
-
-            echo "🌿 Cloning susfs4ksu branch: $SUSFS_BRANCH"
-            git clone https://gitlab.com/simonpunk/susfs4ksu.git
-            cd susfs4ksu
-            git switch $SUSFS_BRANCH || { echo "❌ Failed to switch to branch $SUSFS_BRANCH"; exit 1; }
-            cd ..
-
-            echo "📁 Copying susfs source and headers"
-            cp susfs4ksu/kernel_patches/fs/* fs/
-            cp susfs4ksu/kernel_patches/include/linux/* include/linux/
-
-            echo "📦 Applying patch: $SUSFS_PATCH"
-            cp susfs4ksu/kernel_patches/$SUSFS_PATCH .
-            patch -p1 < $SUSFS_PATCH || { echo "❌ Failed to apply patch: $SUSFS_PATCH"; exit 1; }
-
-            echo "✅ Susfs patch applied successfully"
-          else
-            echo "ℹ️ 未启用 Susfs，跳过补丁步骤"
+          echo "Copying $SRC -> $TARGET"
+          if [ ! -f "$SRC" ]; then
+            echo "❌ Source config not found: $SRC"
+            exit 1
           fi
+
+          mkdir -p "$TARGET_DIR"
+          cp -f "$SRC" "$TARGET"
+
+          # 校验目标存在且非空
+          if [ -s "$TARGET" ]; then
+            echo "✅ OK: $TARGET exists and is non-empty"
+            ls -la "$TARGET"
+          else
+            echo "❌ Error: $TARGET missing or empty"
+            exit 1
+          fi
+
+
+      - name: Install root solution
+        run: |
+          cd "$WORKDIR/$KERNEL_DIR"
+          export KCONFIG_CONFIG="$PWD/arch/arm64/configs/config_defconfig"
+
+          echo "👉 选择的 Root 方案：${{ github.event.inputs.root_solution }}"
+          case "${{ github.event.inputs.root_solution }}" in
+            kernelsu)
+              echo "✅ 集成 KernelSU"
+              curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
+              echo "ROOT_SUFFIX=_KernelSU" >> $GITHUB_ENV
+              ;;
+            kernelsu-next)
+              echo "✅ 集成 KernelSU-Next"
+              curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -
+              echo "ROOT_SUFFIX=_KernelSU-Next" >> $GITHUB_ENV
+              ;;
+            sukisu)
+              echo "✅ 集成 SukiSU-Ultra"
+              curl -LSs https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh | bash -s main
+              echo "ROOT_SUFFIX=_SukiSU" >> $GITHUB_ENV
+              ;;
+            none)
+              echo "ℹ️ 未选择任何 Root 方案，跳过"
+              ;;
+            *)
+              echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}" >&2
+              exit 1
+              ;;
+          esac
+
+
+    #  - name: Susfs patch
+    #    run: |
+    #      cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
+
+    #      if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+    #        # 获取内核版本，例如 "6.1.130"
+    #        KERNEL_VER=$(make kernelversion)
+    #        echo "🔍 Detected kernel version: $KERNEL_VER"
+
+    #        # 提取主版本和次版本，生成分支名
+    #        KERNEL_MAJOR=$(echo "$KERNEL_VER" | cut -d. -f1)
+    #        KERNEL_MINOR=$(echo "$KERNEL_VER" | cut -d. -f2)
+
+    #        # 自动推测 Android 版本（你可以改为硬编码映射表以更严谨）
+    #        if [ "$KERNEL_MAJOR" = "6" ] && [ "$KERNEL_MINOR" = "1" ]; then
+    #          SUSFS_BRANCH="gki-android14-6.1"
+    #          SUSFS_PATCH="50_add_susfs_in_gki-android14-6.1.patch"
+    #        elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "15" ]; then
+    #          SUSFS_BRANCH="gki-android14-5.15"
+    #          SUSFS_PATCH="50_add_susfs_in_gki-android14-5.15.patch"
+    #        elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "10" ]; then
+    #          SUSFS_BRANCH="gki-android13-5.10"
+    #          SUSFS_PATCH="50_add_susfs_in_gki-android13-5.10.patch"
+    #        else
+    #          echo "❌ Unsupported kernel version: $KERNEL_VER"
+    #          exit 1
+    #        fi
+
+    #        echo "🌿 Cloning susfs4ksu branch: $SUSFS_BRANCH"
+    #        git clone https://gitlab.com/simonpunk/susfs4ksu.git
+    #        cd susfs4ksu
+    #        git switch $SUSFS_BRANCH || { echo "❌ Failed to switch to branch $SUSFS_BRANCH"; exit 1; }
+    #        cd ..
+
+    #        echo "📁 Copying susfs source and headers"
+    #        cp susfs4ksu/kernel_patches/fs/* fs/
+    #        cp susfs4ksu/kernel_patches/include/linux/* include/linux/
+
+    #        echo "📦 Applying patch: $SUSFS_PATCH"
+    #        cp susfs4ksu/kernel_patches/$SUSFS_PATCH .
+    #        patch -p1 < $SUSFS_PATCH || { echo "❌ Failed to apply patch: $SUSFS_PATCH"; exit 1; }
+
+    #       echo "✅ Susfs patch applied successfully"
+    #      else
+    #        echo "ℹ️ 未启用 Susfs，跳过补丁步骤"
+    #      fi
 
       - name: Build kernel
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
-
-          # 记录开始时间
+          set -euo pipefail
+          cd "$WORKDIR/$KERNEL_DIR"
+          echo "=== Build start ==="
           starttime=$(date +'%Y-%m-%d %H:%M:%S')
           echo "Build started at: $starttime"
-          echo "Building for: $DEVICE_NAME ($DEVICE_CODENAME) - $SOC_PLATFORM"
-
-          # 设置环境变量
+          
+          # 基本变量
           export ARCH=arm64
           export SUBARCH=arm64
-          export KCONFIG_CONFIG=$PWD/myconfig
+          export OUT=out
+          export KERNEL_DEFCONFIG=config_defconfig
 
-          # 设置工具链路径变量
-          export CLANG_PATH=$GITHUB_WORKSPACE/kernel/toolchains/clang-r487747c/bin
-          export PATH=$CLANG_PATH:$PATH
+          # 默认 LTO 为 thin
+          export LTO="${LTO:-thin}"
+          echo "LTO mode: $LTO"
 
-          # 验证所有必需的工具
-          echo "=== 验证编译器路径 ==="
-          which clang
-          clang --version
-          echo "=== 验证 clang 是否支持 --target ==="
-          clang --target=aarch64-linux-gnu -fsyntax-only -x c /dev/null || echo "❌ clang 不支持 aarch64 目标"
-          echo "=== 验证 binutils 是否可用 ==="
-          which llvm-objcopy
-          which llvm-strip
+          # 工具链路径
+          export CLANG_PATH="$WORKDIR/clang-r547379"
+          export GCC64_PATH="$WORKDIR/aarch64-linux-android-4.9"
+          export GCC32_PATH="$WORKDIR/arm-linux-androideabi-4.9"
 
-          # 清理构建目录
-          rm -rf out && mkdir -p out
+          # 将工具链加入 PATH
+          export PATH="${CLANG_PATH}/bin:${GCC64_PATH}/bin:${GCC32_PATH}/bin:${PATH}"
 
-          # 生成默认配置
-          make O=out KCONFIG_CONFIG=$KCONFIG_CONFIG olddefconfig
+          # CLANG stack frame limit
+          export CLANG_MAX_STACK_SIZE=8192
+          export KCFLAGS="-Wno-error=frame-larger-than"
 
-          # 编译内核
-          make -j$(nproc) O=out \
-             LLVM=1 \
-             WERROR=0 \
-             KBUILD_NO_WERROR=1 \
-             CC=clang \
-             AR=llvm-ar \
-             LD=ld.lld \
-             NM=llvm-nm \
-             OBJCOPY=llvm-objcopy \
-             OBJDUMP=llvm-objdump \
-             STRIP=llvm-strip \
-             HOSTCC=clang \
-             HOSTCXX=clang++ \
-             CROSS_COMPILE= \
-             CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-             KCFLAGS="--target=aarch64-linux-gnu -Wno-error" \
-             KCPPFLAGS="-DCONFIG_CC_OPTIMIZE_FOR_PERFORMANCE" \
-             HOSTCFLAGS="-Wno-error" \
-             HOSTCXXFLAGS="-Wno-error" \
-             2>&1 | tee out/error.log
+          echo "Using CLANG_PATH=$CLANG_PATH"
+          which clang || true
+          clang --version || true
 
-          tail -n 100 out/error.log
+          # 清理输出目录
+          rm -rf "$OUT" && mkdir -p "$OUT"
 
-          # 记录结束时间
+          # 1) 生成 defconfig
+          echo "=== make O=${OUT} ${KERNEL_DEFCONFIG} ==="
+          make O=${OUT} ARCH=${ARCH} ${KERNEL_DEFCONFIG}
+          if [ $? -ne 0 ]; then
+            echo "❌ make ${KERNEL_DEFCONFIG} failed"
+            exit 1
+          fi
+
+          # 2) 处理 LTO (none/thin/full)
+          if [ "${LTO}" = "none" ] || [ "${LTO}" = "thin" ] || [ "${LTO}" = "full" ]; then
+            echo "Applying LTO=${LTO} to ${OUT}/.config"
+            if [ "${LTO}" = "none" ]; then
+              scripts/config --file ${OUT}/.config -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
+            elif [ "${LTO}" = "thin" ]; then
+              scripts/config --file ${OUT}/.config -e LTO_CLANG -d LTO_NONE -e LTO_CLANG_THIN -d LTO_CLANG_FULL -e THINLTO
+            else
+              scripts/config --file ${OUT}/.config -e LTO_CLANG -d LTO_NONE -d LTO_CLANG_THIN -e LTO_CLANG_FULL -d THINLTO
+            fi
+            grep -E "LTO_CLANG|LTO_NONE|LTO_CLANG_THIN|LTO_CLANG_FULL|THINLTO" ${OUT}/.config || true
+          else
+            echo "Invalid LTO value: ${LTO}. Use none|thin|full."
+            exit 1
+          fi
+
+          # 3) 构建参数
+          TH_COUNT=$(nproc)
+          echo "Using ${TH_COUNT} parallel jobs"
+          DEF_ARGS="O=${OUT} \
+          ARCH=${ARCH} \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+          CC=${CLANG_PATH}/bin/clang \
+          AR=${CLANG_PATH}/bin/llvm-ar \
+          NM=${CLANG_PATH}/bin/llvm-nm \
+          LD=${CLANG_PATH}/bin/ld.lld \
+          HOSTCC=${CLANG_PATH}/bin/clang \
+          HOSTCXX=${CLANG_PATH}/bin/clang++ \
+          OBJCOPY=${CLANG_PATH}/bin/llvm-objcopy \
+          OBJDUMP=${CLANG_PATH}/bin/llvm-objdump \
+          READELF=${CLANG_PATH}/bin/llvm-readelf \
+          OBJSIZE=${CLANG_PATH}/bin/llvm-size \
+          STRIP=${CLANG_PATH}/bin/llvm-strip \
+          LLVM_IAS=1 \
+          LLVM=1 \
+          KCFLAGS=\"${KCFLAGS}\""
+
+          BUILD_ARGS="-j${TH_COUNT} ${DEF_ARGS}"
+
+          echo "=== Start make (logging to ${OUT}/error.log) ==="
+          chmod -R 777 *
+          rm android/abi_gki_protected_exports_* || true
+          make ${BUILD_ARGS} 2>&1 | tee ${OUT}/error.log || true
+
+          echo "=== Tail of build log ==="
+          tail -n 200 ${OUT}/error.log || true
+
           endtime=$(date +'%Y-%m-%d %H:%M:%S')
           echo "Build started at: $starttime"
           echo "Build finished at: $endtime"
+          echo "=== Build step finished (check out/error.log for full log) ==="
 
       - name: Check build results
         run: |
-          cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
+          set -euo pipefail
+          cd "$WORKDIR/$KERNEL_DIR"
           echo "=== Build Results ==="
           if [ -f "out/arch/arm64/boot/Image" ]; then
             echo "✅ Kernel build successful!"
             ls -la out/arch/arm64/boot/
-            ls -la out/vmlinux
-            echo "Image size: $(du -h out/arch/arm64/boot/Image)" 
+            ls -la out/vmlinux || true
+            du -h out/arch/arm64/boot/Image || true
           else
             echo "❌ Kernel build failed!"
-            echo "=== Last 100 lines of error log ==="
-            tail -100 out/error.log
-            echo "=== Error summary ==="
-            grep -i "error\|failed\|stop" out/error.log | tail -10
+            echo "=== Last 200 lines of error log ==="
+            if [ -f out/error.log ]; then
+              tail -n 200 out/error.log
+              echo "=== Error summary (last 20 matching lines) ==="
+              grep -iE "error|failed|stop" out/error.log | tail -20 || true
+            else
+              echo "No out/error.log found"
+            fi
             exit 1
           fi
 
-      - name: Prepare AnyKernel3 package
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
+      # - name: Prepare AnyKernel3 package
+      #   run: |
+      #     cd $GITHUB_WORKSPACE/kernel
 
-          # 设置内核名称
-          KERNEL_NAME="${{ inputs.kernel_name }}"
-          if [ -z "$KERNEL_NAME" ]; then
-            KERNEL_NAME="CustomKernel"
-          fi
+      #     # 设置内核名称
+      #     KERNEL_NAME="${{ inputs.kernel_name }}"
+      #     if [ -z "$KERNEL_NAME" ]; then
+      #       KERNEL_NAME="CustomKernel"
+      #     fi
 
-          # 获取内核版本信息
-          cd source/$KERNEL_DIR
-          KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
-          BUILD_DATE=$(date +'%Y%m%d_%H%M')
+      #     # 获取内核版本信息
+      #     cd source/$KERNEL_DIR
+      #     KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
+      #     BUILD_DATE=$(date +'%Y%m%d_%H%M')
 
-          cd $GITHUB_WORKSPACE/kernel
+      #     cd $GITHUB_WORKSPACE/kernel
 
-          echo "=== 准备 AnyKernel3 打包 ==="
-          echo "内核名称: $KERNEL_NAME"
-          echo "内核版本: $KERNEL_VERSION"
-          echo "构建日期: $BUILD_DATE"
-          echo "目标设备: $DEVICE_NAME ($DEVICE_CODENAME)"
-          echo "SoC平台: $SOC_PLATFORM"
+      #     echo "=== 准备 AnyKernel3 打包 ==="
+      #     echo "内核名称: $KERNEL_NAME"
+      #     echo "内核版本: $KERNEL_VERSION"
+      #     echo "构建日期: $BUILD_DATE"
+      #     echo "目标设备: $DEVICE_NAME ($DEVICE_CODENAME)"
+      #     echo "SoC平台: $SOC_PLATFORM"
 
-          # 复制 AnyKernel3 模板到输出目录
-          cp -r anykernel3/* output/
+      #     # 复制 AnyKernel3 模板到输出目录
+      #     cp -r anykernel3/* output/
 
-          # 复制内核文件
-          cp source/$KERNEL_DIR/out/arch/arm64/boot/Image output/
+      #     # 复制内核文件
+      #     cp source/$KERNEL_DIR/out/arch/arm64/boot/Image output/
 
-          # 修改 AnyKernel3 配置
-          cd output && rm -rf ramdisk patch modules
+      #     # 修改 AnyKernel3 配置
+      #     cd output && rm -rf ramdisk patch modules
 
-          # 创建更新信息文件
-          cat > kernel_info.txt << EOF
-          Kernel Name: $KERNEL_NAME
-          Kernel Version: $KERNEL_VERSION
-          Build Date: $BUILD_DATE
-          Target Device: $DEVICE_NAME ($DEVICE_CODENAME)
-          SoC Platform: $SOC_PLATFORM
-          BBR Enabled: ${{ inputs.enable_bbr }}
-          ZRAM Enabled: ${{ inputs.enable_zram }}
-          ZRAM Algorithm: ${{ inputs.zram_algorithm }}
-          Root Solution: ${{ inputs.root_solution }}
-          Compiler: Clang 21.0.0
-          Architecture: ARM64
-          EOF
+      #     # 创建更新信息文件
+      #     cat > kernel_info.txt << EOF
+      #     Kernel Name: $KERNEL_NAME
+      #     Kernel Version: $KERNEL_VERSION
+      #     Build Date: $BUILD_DATE
+      #     Target Device: $DEVICE_NAME ($DEVICE_CODENAME)
+      #     SoC Platform: $SOC_PLATFORM
+      #     BBR Enabled: ${{ inputs.enable_bbr }}
+      #     ZRAM Enabled: ${{ inputs.enable_zram }}
+      #     ZRAM Algorithm: ${{ inputs.zram_algorithm }}
+      #     Root Solution: ${{ inputs.root_solution }}
+      #     Compiler: Clang 21.0.0
+      #     Architecture: ARM64
+      #     EOF
 
-          echo "=== AnyKernel3 准备完成 ==="
-          ls -la ./
+      #     echo "=== AnyKernel3 准备完成 ==="
+      #     ls -la ./
 
-      - name: Create AnyKernel3 ZIP package
-        run: |
-          cd $GITHUB_WORKSPACE/kernel/output
+      # - name: Create AnyKernel3 ZIP package
+      #   run: |
+      #     cd $GITHUB_WORKSPACE/kernel/output
 
-          # 设置包名
-          KERNEL_NAME="${{ inputs.kernel_name }}"
-          if [ -z "$KERNEL_NAME" ]; then
-            KERNEL_NAME="CustomKernel"
-          fi
+      #     # 设置包名
+      #     KERNEL_NAME="${{ inputs.kernel_name }}"
+      #     if [ -z "$KERNEL_NAME" ]; then
+      #       KERNEL_NAME="CustomKernel"
+      #     fi
 
-          BUILD_DATE=$(date +'%Y%m%d_%H%M')
-          BBR_SUFFIX=""
-          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-            BBR_SUFFIX="_BBR"
-          fi
+      #     BUILD_DATE=$(date +'%Y%m%d_%H%M')
+      #     BBR_SUFFIX=""
+      #     if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+      #       BBR_SUFFIX="_BBR"
+      #     fi
 
-          SUSFS_NAME=""
-          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-            BBR_SUFFIX="_Susfs"
-          fi
+      #     SUSFS_NAME=""
+      #     if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+      #       BBR_SUFFIX="_Susfs"
+      #     fi
 
-          ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}${SUSFS_NAME}_${BUILD_DATE}.zip"
+      #     ZIP_NAME="${KERNEL_NAME}_${DEVICE_CODENAME}${BBR_SUFFIX}${ROOT_SUFFIX}${SUSFS_NAME}_${BUILD_DATE}.zip"
 
-          echo "=== 创建 ZIP 包: $ZIP_NAME ==="
+      #     echo "=== 创建 ZIP 包: $ZIP_NAME ==="
 
-          # 创建 ZIP 包
-          zip -r9 "$ZIP_NAME" . -x "*.bak" "*.zip"
+      #     # 创建 ZIP 包
+      #     zip -r9 "$ZIP_NAME" . -x "*.bak" "*.zip"
 
-          # 验证 ZIP 包
-          if [ -f "$ZIP_NAME" ]; then
-            echo "✅ ZIP 包创建成功!"
-            echo "包名: $ZIP_NAME"
-            echo "大小: $(du -h "$ZIP_NAME")"
+      #     # 验证 ZIP 包
+      #     if [ -f "$ZIP_NAME" ]; then
+      #       echo "✅ ZIP 包创建成功!"
+      #       echo "包名: $ZIP_NAME"
+      #       echo "大小: $(du -h "$ZIP_NAME")"
 
-            # 显示 ZIP 包内容
-            echo "=== ZIP 包内容 ==="
-            unzip -l "$ZIP_NAME" | head -20
-          else
-            echo "❌ ZIP 包创建失败!"
-            exit 1
-          fi
+      #       # 显示 ZIP 包内容
+      #       echo "=== ZIP 包内容 ==="
+      #       unzip -l "$ZIP_NAME" | head -20
+      #     else
+      #       echo "❌ ZIP 包创建失败!"
+      #       exit 1
+      #     fi
 
-          # 保存包名供后续步骤使用
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
-
-      - name: Compress vmlinux
-        if: always()
-        run: |
-          VMLINUX=kernel/source/${{ env.KERNEL_DIR }}/out/vmlinux
-          if [ -f "$VMLINUX" ]; then
-            echo "✅ vmlinux exists, compressing..."
-            gzip -c "$VMLINUX" > "${VMLINUX}.gz"
-          else
-            echo "⚠️ vmlinux not found, skipping compression"
-          fi
+      #     # 保存包名供后续步骤使用
+      #     echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -501,7 +457,6 @@ jobs:
           path: |
             kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
             kernel/source/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
-            kernel/source/${{ env.KERNEL_DIR }}/out/vmlinux.gz
             kernel/source/${{ env.KERNEL_DIR }}/out/error.log
             kernel/source/${{ env.KERNEL_DIR }}/out/.config
             kernel/output/*.zip
