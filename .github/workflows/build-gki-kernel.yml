@@ -1,4 +1,4 @@
-name: Build Android GKI Kernel
+name: Build Ace3Pro Kernel
 
 on:
   workflow_dispatch:
@@ -102,13 +102,6 @@ jobs:
           # 设置 KERNEL_DIR 环境变量
           echo "KERNEL_DIR=android_kernel_oneplus_sm8650" >> $GITHUB_ENV
 
-      - name: Show final WORKDIR layout
-        run: |
-          set -e
-          cd "$WORKDIR"
-          echo "Final layout under $WORKDIR:"
-          ls -la
-
       - name: Copy and configure kernel config
         run: |
           set -euo pipefail
@@ -169,6 +162,8 @@ jobs:
               ;;
             *)
               echo "❌ 未知的 root_solution: ${{ github.event.inputs.root_solution }}" >&2
+              # 默认值，避免未定义时报错
+              echo "ROOT_SUFFIX=_NoRoot" >> $GITHUB_ENV
               exit 1
               ;;
           esac
@@ -197,7 +192,7 @@ jobs:
 
             echo "✅ Susfs patch step finished"
           else
-            echo "⚠️ Susfs patches skipped"
+            echo "ℹ️ Susfs patches skipped"
           fi
 
 
@@ -238,7 +233,7 @@ jobs:
           # 清理输出目录
           rm -rf "$OUT" && mkdir -p "$OUT"
 
-          # 1) 生成 defconfig
+          # 生成 defconfig
           echo "=== make O=${OUT} ${KERNEL_DEFCONFIG} ==="
           make O=${OUT} ARCH=${ARCH} ${KERNEL_DEFCONFIG}
           if [ $? -ne 0 ]; then
@@ -246,7 +241,7 @@ jobs:
             exit 1
           fi
 
-          # 2) 处理 LTO (none/thin/full)
+          # 处理 LTO (none/thin/full)
           if [ "${LTO}" = "none" ] || [ "${LTO}" = "thin" ] || [ "${LTO}" = "full" ]; then
             echo "Applying LTO=${LTO} to ${OUT}/.config"
             if [ "${LTO}" = "none" ]; then
@@ -262,7 +257,7 @@ jobs:
             exit 1
           fi
 
-          # 3) 构建参数
+          # 构建参数
           TH_COUNT=$(nproc)
           echo "Using ${TH_COUNT} parallel jobs"
           DEF_ARGS="O=${OUT} \
@@ -352,22 +347,21 @@ jobs:
           echo "=== 新刷机包信息 ==="
           zipinfo $NEW_ZIP
 
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-build-${{ github.run_number }}
+          name: kernel-build-${{ github.run_number }}${{ env.ROOT_SUFFIX }}
           path: |
-            # 内核 Image
-            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
-            # Device Tree Blob
-            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
-            # 编译日志
-            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/error.log
-            # 最终配置文件
-            ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/.config
-            # 替换后的 anykernel3.zip
-            ${{ github.workspace }}/anykernel3-${{ github.run_number }}.zip
-            # Kernel 信息文件
-            ${{ github.workspace }}/kernel/output/kernel_info.txt
+              ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image*
+              ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/arch/arm64/boot/dts/*/*.dtb
+              ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/error.log
+              ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/.config
+              ${{ github.workspace }}/kernel/output/kernel_info.txt
+
+      - name: Upload AnyKernel3 package
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anykernel3-${{ github.run_number }}${{ env.ROOT_SUFFIX }}
+          path: ${{ github.workspace }}/anykernel3-${{ github.run_number }}.zip
