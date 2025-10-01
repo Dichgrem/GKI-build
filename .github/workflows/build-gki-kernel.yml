@@ -173,53 +173,33 @@ jobs:
               ;;
           esac
 
+      - name: Apply Susfs patches
+        run: |
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
 
-    #  - name: Susfs patch
-    #    run: |
-    #      cd $GITHUB_WORKSPACE/kernel/source/$KERNEL_DIR
+            echo "🌿 Cloning susfs4ksu repository"
+            git clone https://gitlab.com/simonpunk/susfs4ksu.git
+            cd susfs4ksu
+            git checkout origin/gki-android14-6.1
 
-    #      if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-    #        # 获取内核版本，例如 "6.1.130"
-    #        KERNEL_VER=$(make kernelversion)
-    #        echo "🔍 Detected kernel version: $KERNEL_VER"
+            echo "📁 Copying susfs source and headers"
+            cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ../KernelSU/
+            cp ./kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ../
+            cp ./kernel_patches/fs/* ../fs/
+            cp ./kernel_patches/include/linux/* ../include/linux/
+            cd ../KernelSU
 
-    #        # 提取主版本和次版本，生成分支名
-    #        KERNEL_MAJOR=$(echo "$KERNEL_VER" | cut -d. -f1)
-    #        KERNEL_MINOR=$(echo "$KERNEL_VER" | cut -d. -f2)
+            echo "📦 Applying KernelSU patch"
+            patch -p1 --fuzz=3 --ignore-whitespace < 10_enable_susfs_for_ksu.patch || true
+            cd ../
+            patch -p1 --fuzz=3 --ignore-whitespace < 50_add_susfs_in_gki-android14-6.1.patch || true
 
-    #        # 自动推测 Android 版本（你可以改为硬编码映射表以更严谨）
-    #        if [ "$KERNEL_MAJOR" = "6" ] && [ "$KERNEL_MINOR" = "1" ]; then
-    #          SUSFS_BRANCH="gki-android14-6.1"
-    #          SUSFS_PATCH="50_add_susfs_in_gki-android14-6.1.patch"
-    #        elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "15" ]; then
-    #          SUSFS_BRANCH="gki-android14-5.15"
-    #          SUSFS_PATCH="50_add_susfs_in_gki-android14-5.15.patch"
-    #        elif [ "$KERNEL_MAJOR" = "5" ] && [ "$KERNEL_MINOR" = "10" ]; then
-    #          SUSFS_BRANCH="gki-android13-5.10"
-    #          SUSFS_PATCH="50_add_susfs_in_gki-android13-5.10.patch"
-    #        else
-    #          echo "❌ Unsupported kernel version: $KERNEL_VER"
-    #          exit 1
-    #        fi
+            echo "✅ Susfs patch step finished"
+          else
+            echo "⚠️ Susfs patches skipped"
+          fi
 
-    #        echo "🌿 Cloning susfs4ksu branch: $SUSFS_BRANCH"
-    #        git clone https://gitlab.com/simonpunk/susfs4ksu.git
-    #        cd susfs4ksu
-    #        git switch $SUSFS_BRANCH || { echo "❌ Failed to switch to branch $SUSFS_BRANCH"; exit 1; }
-    #        cd ..
-
-    #        echo "📁 Copying susfs source and headers"
-    #        cp susfs4ksu/kernel_patches/fs/* fs/
-    #        cp susfs4ksu/kernel_patches/include/linux/* include/linux/
-
-    #        echo "📦 Applying patch: $SUSFS_PATCH"
-    #        cp susfs4ksu/kernel_patches/$SUSFS_PATCH .
-    #        patch -p1 < $SUSFS_PATCH || { echo "❌ Failed to apply patch: $SUSFS_PATCH"; exit 1; }
-
-    #       echo "✅ Susfs patch applied successfully"
-    #      else
-    #        echo "ℹ️ 未启用 Susfs，跳过补丁步骤"
-    #      fi
 
       - name: Build kernel
         run: |
