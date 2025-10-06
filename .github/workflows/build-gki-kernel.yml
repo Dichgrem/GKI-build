@@ -3,18 +3,16 @@ name: Build Ace3Pro Kernel
 on:
   workflow_dispatch:
     inputs:
+      enable_bbr:
+        description: "Enable BBR support"
+        required: false
+        default: "false"
+        type: boolean
       enable_susfs:
         description: "Enable susfs support"
         required: false
-        default: "true"
+        default: "false"
         type: boolean
-      config_source:
-        description: "Choose config source for myconfig"
-        required: true
-        default: "repo"
-        type: choice
-        options:
-          - repo
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -142,6 +140,28 @@ jobs:
             exit 1
           fi
 
+      - name: Enable BBR support
+        run: |
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            echo "✅ Enabling BBR support"
+            cd "$WORKDIR/$KERNEL_DIR"
+
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling BBR' \
+              'CONFIG_TCP_CONG_ADVANCED=y' \
+              'CONFIG_TCP_CONG_BBR=y' \
+              'CONFIG_DEFAULT_BBR=y' \
+              'CONFIG_DEFAULT_TCP_CONG="bbr"' > kernel/configs/bbr.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/bbr.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+          else
+            echo "⏩ Skipping BBR support (disabled)"
+          fi
 
       - name: Install root solution
         run: |

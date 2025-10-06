@@ -18,7 +18,8 @@
 - Use clang-r547379
 - Enable ThinLTO/FullLTO to build
 - Enable Root support : kernelsu/SukiSU/kernelsu-next
-- Enable Susfs support : You can build susfs into kernel 
+- Enable Susfs support : You can build susfs into kernel
+- Enable BBR support : Enable bbr congestion control algorithm 
 - Enable Anykernel3 support : Packaged as a zip package of anykernel3
 
 To be continued...
