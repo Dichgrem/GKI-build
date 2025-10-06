@@ -16,7 +16,7 @@
 ## Features
 
 - Use clang-r547379
-- Enable ThinLTO to build
+- Enable ThinLTO/FullLTO to build
 - Enable Root support : kernelsu/SukiSU/kernelsu-next
 - Enable Susfs support : You can build susfs into kernel 
 - Enable Anykernel3 support : Packaged as a zip package of anykernel3

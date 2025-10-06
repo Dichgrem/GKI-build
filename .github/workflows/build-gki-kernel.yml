@@ -25,6 +25,14 @@ on:
           - kernelsu
           - kernelsu-next
           - none
+      lto_solution:
+        description: "Select the level of lto"
+        required: false
+        default: "thin"
+        type: choice
+        options:
+          - thin
+          - full    
       kernel_name:
         description: "Custom kernel name (optional)"
         required: false
@@ -211,7 +219,7 @@ jobs:
           export KERNEL_DEFCONFIG=config_defconfig
 
           # 默认 LTO 为 thin
-          export LTO="${LTO:-thin}"
+          export LTO="${{ inputs.lto_solution || 'thin' }}"
           echo "LTO mode: $LTO"
 
           # 工具链路径
