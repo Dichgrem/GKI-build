@@ -9,10 +9,18 @@ on:
         default: "false"
         type: boolean
       enable_susfs:
-        description: "Enable susfs support"
+        description: "Enable SUSFS support"
         required: false
         default: "false"
         type: boolean
+      lto_solution:
+        description: "Select the level of lto"
+        required: false
+        default: "thin"
+        type: choice
+        options:
+          - thin
+          - full  
       root_solution:
         description: "Choose root solution to integrate"
         required: false
@@ -23,19 +31,6 @@ on:
           - kernelsu
           - kernelsu-next
           - none
-      lto_solution:
-        description: "Select the level of lto"
-        required: false
-        default: "thin"
-        type: choice
-        options:
-          - thin
-          - full    
-      kernel_name:
-        description: "Custom kernel name (optional)"
-        required: false
-        default: "GKI"
-        type: string
 
 jobs:
   build-kernel:
@@ -59,7 +54,7 @@ jobs:
             pahole dwarves zip gcc g++
           gcc --version
 
-      - name: Setup toolchains & directories
+      - name: Setup clang toolchains
         run: |
           set -e
           echo "WORKDIR=$WORKDIR"
@@ -84,7 +79,7 @@ jobs:
 
           echo "✅ Setup toolchains -> OK"
 
-      - name: Setup & Clone Kernel
+      - name: Clone & Setup Kernel
         run: |
           set -e
           mkdir -p "$WORKDIR"
@@ -108,7 +103,7 @@ jobs:
           # 设置 KERNEL_DIR 环境变量
           echo "KERNEL_DIR=android_kernel_oneplus_sm8650" >> $GITHUB_ENV
 
-      - name: Copy and configure kernel config
+      - name: Copy and configure config
         run: |
           set -euo pipefail
           echo "WORKDIR=$WORKDIR"
@@ -163,7 +158,7 @@ jobs:
             echo "⏩ Skipping BBR support (disabled)"
           fi
 
-      - name: Install root solution
+      - name: Install Root solution
         run: |
           cd "$WORKDIR/$KERNEL_DIR"
           export KCONFIG_CONFIG="$PWD/arch/arm64/configs/config_defconfig"
@@ -196,7 +191,7 @@ jobs:
               ;;
           esac
 
-      - name: Apply Susfs patches
+      - name: Apply SUSFS patches
         run: |
           if [ "${{ inputs.enable_susfs }}" = "true" ]; then
             cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
