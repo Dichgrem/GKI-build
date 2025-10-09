@@ -8,6 +8,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      enable_zram:
+        description: "Enable ZRAM support"
+        required: false
+        default: "false"
+        type: boolean
       enable_susfs:
         description: "Enable SUSFS support"
         required: false
@@ -135,29 +140,6 @@ jobs:
             exit 1
           fi
 
-      - name: Enable BBR support
-        run: |
-          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
-            echo "✅ Enabling BBR support"
-            cd "$WORKDIR/$KERNEL_DIR"
-
-            mkdir -p kernel/configs
-            printf '%s\n' \
-              '# Fragment config for enabling BBR' \
-              'CONFIG_TCP_CONG_ADVANCED=y' \
-              'CONFIG_TCP_CONG_BBR=y' \
-              'CONFIG_DEFAULT_BBR=y' \
-              'CONFIG_DEFAULT_TCP_CONG="bbr"' > kernel/configs/bbr.config
-
-            export ARCH=arm64
-            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
-
-            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/bbr.config
-            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
-          else
-            echo "⏩ Skipping BBR support (disabled)"
-          fi
-
       - name: Install Root solution
         run: |
           cd "$WORKDIR/$KERNEL_DIR"
@@ -191,7 +173,74 @@ jobs:
               ;;
           esac
 
-      - name: Apply SUSFS patches
+      - name: Enable BBR support
+        run: |
+          if [ "${{ inputs.enable_bbr }}" = "true" ]; then
+            echo "✅ Enabling BBR support"
+            cd "$WORKDIR/$KERNEL_DIR"
+
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling BBR' \
+              'CONFIG_TCP_CONG_ADVANCED=y' \
+              'CONFIG_TCP_CONG_BBR=y' \
+              'CONFIG_DEFAULT_BBR=y' \
+              'CONFIG_DEFAULT_TCP_CONG="bbr"' > kernel/configs/bbr.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/bbr.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+          else
+            echo "⏩ Skipping BBR support (disabled)"
+          fi
+
+      - name: Enable ZRAM support
+        run: |
+          if [ "${{ inputs.enable_zram }}" = "true" ]; then
+            cd $GITHUB_WORKSPACE/kernel/
+            git clone https://github.com/ShirkNeko/SukiSU_patch.git
+            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+
+            echo "正在拉取ZRAM补丁"
+            cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
+            cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
+            cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
+            cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./lib/
+
+            cp ../SukiSU_patch/other/zram/zram_patch/6.1/lz4kd.patch ./
+            echo "正在打lz4kd补丁"
+            patch -p1 -F 3 < lz4kd.patch || true
+            echo "lz4kd_patch完成"
+            cp ../SukiSU_patch/other/zram/zram_patch/6.1/lz4k_oplus.patch ./
+            echo "正在打lz4k_oplus补丁"
+            patch -p1 -F 3 < lz4k_oplus.patch || true
+            echo "lz4k_oplus_patch完成"
+            
+            cd "$WORKDIR/$KERNEL_DIR"
+
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling ZRAM' \
+              'CONFIG_CRYPTO_LZ4HC=y' \
+              'CONFIG_CRYPTO_LZ4K=y' \
+              'CONFIG_CRYPTO_LZ4KD=y' \
+              'CONFIG_CRYPTO_842=y' \
+              'CONFIG_CRYPTO_LZ4K_OPLUS=y' \
+              'CONFIG_ZRAM_WRITEBACK=y' > kernel/configs/zram.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/zram.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+            echo "✅ ZRAM patch step finished"
+          else
+            echo "ℹ️ ZRAM patches skipped"
+          fi
+
+      - name: Enable SUSFS support
         run: |
           if [ "${{ inputs.enable_susfs }}" = "true" ]; then
             cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650

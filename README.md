@@ -19,7 +19,8 @@
 - Enable ThinLTO/FullLTO to build
 - Enable Root support : kernelsu/SukiSU/kernelsu-next
 - Enable Susfs support : You can build susfs into kernel
-- Enable BBR support : Enable bbr congestion control algorithm 
+- Enable BBR support : Enable bbr congestion control algorithm
+- Enable ZRAM support : Enable extra zram algorithm(LZ4KD/LZ4K_oplus)
 - Enable Anykernel3 support : Packaged as a zip package of anykernel3
 
 To be continued...
