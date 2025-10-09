@@ -23,6 +23,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      enable_lsm:
+        description: "Enable LSM_BBG support"
+        required: false
+        default: "false"
+        type: boolean
       lto_solution:
         description: "Select the level of lto"
         required: false
@@ -267,9 +272,9 @@ jobs:
             cd ../
             patch -p1 --fuzz=3 --ignore-whitespace < 50_add_susfs_in_gki-android14-6.1.patch || true
 
-            echo "✅ Susfs patch step finished"
+            echo "✅ SUSFS patch step finished"
           else
-            echo "ℹ️ Susfs patches skipped"
+            echo "ℹ️ SUSFS patches skipped"
           fi
 
       - name: Enable SCHED support
@@ -284,6 +289,28 @@ jobs:
             ls -la
           else
            echo "ℹ️ SCHED skipped"
+          fi
+
+      - name: Enable LSM_BBG support
+        run: |
+          if [ "${{ inputs.enable_lsm }}" = "true" ]; then
+            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            echo "正在启用内核级基带保护支持…"
+            wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/landlock/landlock,baseband_guard/ } }' security/Kconfig
+            
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling LSM' \
+              'CONFIG_BBG=y' > kernel/configs/lsm.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/lsm.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+            echo "✅ LSM_BBG step finished"
+          else
+           echo "ℹ️ LSM_BBG skipped"
           fi
 
       - name: Build kernel

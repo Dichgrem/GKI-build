@@ -18,10 +18,11 @@
 - Use clang-r547379
 - Enable ThinLTO/FullLTO to build
 - Enable Root support : kernelsu/SukiSU/kernelsu-next
-- Enable SCHED support : Enable Fengchi scx scheduling
-- Enable SUSFS support : You can build susfs into kernel
 - Enable BBR support : Enable bbr congestion control algorithm
 - Enable ZRAM support : Enable extra zram algorithm(LZ4KD/LZ4K_oplus)
+- Enable SUSFS support : You can build susfs into kernel
+- Enable SCHED support : Enable Fengchi scx scheduling
+- Enable LSM_BBG support ：block unauthorized writes to critical partitions/device nodes
 - Enable Anykernel3 support : Packaged as a zip package of anykernel3
 
 To be continued...
