@@ -19,6 +19,7 @@
 - Enable ThinLTO/FullLTO to build
 - Enable Root support : kernelsu/SukiSU/kernelsu-next
 - Enable BBR support : Enable bbr congestion control algorithm
+- Enable KPM support : Enable kpm support in kernel 
 - Enable ZRAM support : Enable extra zram algorithm(LZ4KD/LZ4K_oplus)
 - Enable SUSFS support : You can build susfs into kernel
 - Enable SCHED support : Enable Fengchi scx scheduling

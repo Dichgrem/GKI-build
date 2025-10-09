@@ -8,6 +8,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      enable_kpm:
+        description: "Enable KPM support"
+        required: false
+        default: "false"
+        type: boolean
       enable_zram:
         description: "Enable ZRAM support"
         required: false
@@ -204,6 +209,24 @@ jobs:
             mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
           else
             echo "⏩ Skipping BBR support (disabled)"
+          fi
+
+      - name: Enable KPM support
+        run: |
+          if [[ "${{ inputs.enable_kpm }}" == "true" && "${{ inputs.root_solution }}" == "sukisu" ]]; then
+            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling KPM' \
+              'CONFIG_KPM=y' > kernel/configs/kpm.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/kpm.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+            echo "✅ KPM config finished"
+          else
+            echo "ℹ️ KPM patches skipped"
           fi
 
       - name: Enable ZRAM support
@@ -410,6 +433,20 @@ jobs:
           echo "Build started at: $starttime"
           echo "Build finished at: $endtime"
           echo "=== Build step finished (check out/error.log for full log) ==="
+
+      - name: Apply KPM patches
+        run: |
+          if [[ "${{ inputs.enable_kpm }}" == "true" && "${{ inputs.root_solution }}" == "sukisu" ]]; then
+            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650/out/arch/arm64/boot
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
+            chmod 777 patch
+            ./patch
+            rm -rf Image
+            mv oImage Image
+            echo "✅ KPM patch finished"
+          else
+           echo "ℹ️ SCHED skipped"
+          fi
 
       - name: Check build results
         run: |
