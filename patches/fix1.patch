@@ -1,0 +1,8 @@
+--- a/drivers/kernelsu/ksud.c
++++ b/drivers/kernelsu/ksud.c
+@@ -71,7 +71,6 @@
+ #ifdef CONFIG_KSU_SUSFS_SUS_SU
+-bool susfs_is_sus_su_ready = false;
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
+ 
+ u32 ksu_devpts_sid;

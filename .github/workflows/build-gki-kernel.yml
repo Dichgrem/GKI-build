@@ -174,7 +174,7 @@ jobs:
               ;;
             sukisu)
               echo "✅ 集成 SukiSU-Ultra"
-              curl -LSs https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh | bash -s main
+              curl -LSs https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh | bash -s susfs-main
               echo "ROOT_SUFFIX=_SukiSU" >> $GITHUB_ENV
               ;;
             none)
@@ -299,6 +299,35 @@ jobs:
             cd ../
             patch -p1 --fuzz=3 --ignore-whitespace < 50_add_susfs_in_gki-android14-6.1.patch || true
 
+            if [ "${{ github.event.inputs.root_solution }}" = "sukisu" ]; then
+              echo "📦 Applying Fix patches for SukiSU"
+              patch -p1 < "$GITHUB_WORKSPACE/patches/fix1.patch"
+              patch -p1 < "$GITHUB_WORKSPACE/patches/fix2.patch"
+            fi
+
+            mkdir -p kernel/configs
+            printf '%s\n' \
+              '# Fragment config for enabling SUSFS' \
+              'CONFIG_KSU_SUSFS=y' \
+              'CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y' \
+              'CONFIG_KSU_SUSFS_SUS_PATH=y' \
+              'CONFIG_KSU_SUSFS_SUS_MOUNT=y' \
+              'CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y' \
+              'CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y' \
+              'CONFIG_KSU_SUSFS_SUS_KSTAT=y' \
+              'CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n' \
+              'CONFIG_KSU_SUSFS_TRY_UMOUNT=y' \
+              'CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y' \
+              'CONFIG_KSU_SUSFS_SPOOF_UNAME=y' \
+              'CONFIG_KSU_SUSFS_ENABLE_LOG=y' \
+              'CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y' \
+              'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y' \
+              'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' > kernel/configs/susfs.config
+
+            export ARCH=arm64
+            export KCONFIG_CONFIG=arch/arm64/configs/config_defconfig.new
+            scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/susfs.config
+            mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
             echo "✅ SUSFS patch step finished"
           else
             echo "ℹ️ SUSFS patches skipped"

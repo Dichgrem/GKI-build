@@ -1,0 +1,8 @@
+--- a/drivers/kernelsu/kernel_compat.c
++++ b/drivers/kernelsu/kernel_compat.c
+@@ -83,6 +83,7 @@
+ 
++ #undef ksu_access_ok
+ int ksu_access_ok(const void *addr, unsigned long size) {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
+     /* For kernels before 5.0.0, pass the type argument to access_ok. */
