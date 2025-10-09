@@ -207,6 +207,7 @@ jobs:
 
             scripts/kconfig/merge_config.sh -m arch/arm64/configs/config_defconfig kernel/configs/bbr.config
             mv arch/arm64/configs/config_defconfig.new arch/arm64/configs/config_defconfig
+            echo "✅ BBR patch step finished"
           else
             echo "⏩ Skipping BBR support (disabled)"
           fi
@@ -214,7 +215,8 @@ jobs:
       - name: Enable KPM support
         run: |
           if [[ "${{ inputs.enable_kpm }}" == "true" && "${{ inputs.root_solution }}" == "sukisu" ]]; then
-            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            echo "✅ Enabling KPM support"
+            cd "$WORKDIR/$KERNEL_DIR"
             mkdir -p kernel/configs
             printf '%s\n' \
               '# Fragment config for enabling KPM' \
@@ -232,9 +234,10 @@ jobs:
       - name: Enable ZRAM support
         run: |
           if [ "${{ inputs.enable_zram }}" = "true" ]; then
+            echo "✅ Enabling ZRAM support"
             cd $GITHUB_WORKSPACE/kernel/
             git clone https://github.com/ShirkNeko/SukiSU_patch.git
-            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            cd "$WORKDIR/$KERNEL_DIR"
 
             echo "正在拉取ZRAM补丁"
             cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
@@ -276,7 +279,8 @@ jobs:
       - name: Enable SUSFS support
         run: |
           if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            echo "✅ Enabling SUSFS support"
+            cd "$WORKDIR/$KERNEL_DIR"
 
             echo "🌿 Cloning susfs4ksu repository"
             git clone https://gitlab.com/simonpunk/susfs4ksu.git
@@ -303,11 +307,12 @@ jobs:
       - name: Enable SCHED support
         run: |
           if [ "${{ inputs.enable_sched }}" = "true" ]; then
-            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
+            echo "✅ Enabling SCHED support"
+            cd "$WORKDIR/$KERNEL_DIR"
             git clone https://github.com/HanKuCha/sched_ext.git
             cp -r ./sched_ext/* ./kernel/sched
             rm -rf ./sched_ext/.git
-            echo "✅ SCHED 应用成功"
+            echo "✅ SCHED patch step finished"
             cd ./kernel/sched
             ls -la
           else
@@ -317,8 +322,8 @@ jobs:
       - name: Enable LSM_BBG support
         run: |
           if [ "${{ inputs.enable_lsm }}" = "true" ]; then
-            cd $GITHUB_WORKSPACE/kernel/android_kernel_oneplus_sm8650
-            echo "正在启用内核级基带保护支持…"
+            cd "$WORKDIR/$KERNEL_DIR"
+            echo "✅ Enabling LSM_BBG support"
             wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/landlock/landlock,baseband_guard/ } }' security/Kconfig
             
