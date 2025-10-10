@@ -546,9 +546,22 @@ jobs:
               ${{ github.workspace }}/kernel/${{ env.KERNEL_DIR }}/out/.config
               ${{ github.workspace }}/kernel/output/kernel_info.txt
 
+      - name: Set package name
+        run: |
+          PKG_NAME="anykernel3-${{ github.run_number }}"
+          [[ "${{ inputs.enable_bbr }}" == "true" ]] && PKG_NAME="${PKG_NAME}_bbr"
+          [[ "${{ inputs.enable_kpm }}" == "true" ]] && PKG_NAME="${PKG_NAME}_kpm"
+          [[ "${{ inputs.enable_zram }}" == "true" ]] && PKG_NAME="${PKG_NAME}_zram"
+          [[ "${{ inputs.enable_sched }}" == "true" ]] && PKG_NAME="${PKG_NAME}_sched"
+          [[ "${{ inputs.enable_susfs }}" == "true" ]] && PKG_NAME="${PKG_NAME}_susfs"
+          [[ "${{ inputs.enable_lsm }}" == "true" ]] && PKG_NAME="${PKG_NAME}_lsm"
+          [[ "${{ inputs.root_solution }}" != "none" ]] && PKG_NAME="${PKG_NAME}_${{ inputs.root_solution }}"
+          PKG_NAME="${PKG_NAME}_lto-${{ inputs.lto_solution }}"
+          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
+
       - name: Upload AnyKernel3 package
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: anykernel3-${{ github.run_number }}${{ env.ROOT_SUFFIX }}
+          name: ${{ env.PKG_NAME }}
           path: ${{ github.workspace }}/anykernel3-${{ github.run_number }}.zip
