@@ -1,0 +1,25 @@
+From 6059499ca6be9a424b09f8d5eeb626d0fbd8d126 Mon Sep 17 00:00:00 2001
+From: dichgrem <brcefy@gmail.com>
+Date: Sun, 9 Nov 2025 20:39:11 +0800
+Subject: [PATCH] fix:base
+
+---
+ fs/proc/base.c | 1106 +++++++++++++++++++++++++-----------------------
+ 1 file changed, 576 insertions(+), 530 deletions(-)
+
+diff --git a/fs/proc/base.c b/fs/proc/base.c
+index b0ec673a2..12f3b9a13 100644
+--- a/fs/proc/base.c
++++ b/fs/proc/base.c
+@@ -99,6 +99,9 @@
+ #include <linux/resctrl.h>
+ #include <linux/cn_proc.h>
+ #include <linux/cpufreq_times.h>
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#include <linux/susfs_def.h>
++#endif
+ #include <linux/dma-buf.h>
+ #include <trace/events/oom.h>
+ #include <trace/hooks/sched.h>
+-- 
+2.43.0

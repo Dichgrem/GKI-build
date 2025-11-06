@@ -1,8 +1,25 @@
---- a/drivers/kernelsu/ksud.c
-+++ b/drivers/kernelsu/ksud.c
-@@ -71,7 +71,6 @@
- #ifdef CONFIG_KSU_SUSFS_SUS_SU
--bool susfs_is_sus_su_ready = false;
+From fa44e51fc7886e40c0748e2f1a389a6c740cc5c5 Mon Sep 17 00:00:00 2001
+From: dichgrem <brcefy@gmail.com>
+Date: Sun, 9 Nov 2025 21:15:25 +0800
+Subject: [PATCH] fix:ksud.c
+
+---
+ kernel/ksud.c | 144 ++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 87 insertions(+), 57 deletions(-)
+
+diff --git a/kernel/ksud.c b/kernel/ksud.c
+index d7078460..d213add5 100644
+--- a/kernel/ksud.c
++++ b/kernel/ksud.c
+@@ -68,6 +68,9 @@ bool ksu_execveat_hook __read_mostly = true;
+ bool susfs_is_sus_su_ready = false;
  #endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
  
++#ifdef CONFIG_KSU_SUSFS_SUS_SU
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
++
  u32 ksu_devpts_sid;
+ 
+ // Detect whether it is on or not
+-- 
+2.43.0
