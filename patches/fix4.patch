@@ -1,0 +1,23 @@
+--- a/drivers/kernelsu/core_hook.c
++++ b/drivers/kernelsu/core_hook.c
+@@ -526,7 +526,6 @@
+ 	return 0;
+ }
+ 
+-#endif // #ifdef CONFIG_KSU_SUSFS
+ 
+ #endif // KERNEL_VERSION(5, 11, 0)
+ 
+--- a/KernelSU/kernel/sucompat.c
++++ b/KernelSU/kernel/sucompat.c
+@@ -408,3 +408,11 @@
+ 
+ 	return 0;
+ }
++
++/* --- SUSFS compatibility wrapper --- */
++int ksu_handle_devpts(struct inode *inode)
++{
++	return __ksu_handle_devpts(inode);
++}
++EXPORT_SYMBOL(ksu_handle_devpts);
